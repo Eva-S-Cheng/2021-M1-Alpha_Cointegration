@@ -64,6 +64,7 @@ def Divide_Dataset_Composition_Btw_Dates(myData, date_Searched):
     for i in range(len(myData)):
         if(date_Searched >= myData[i][1] and date_Searched <= myData[i][2]):
             dataset_Btw_Dates.extend([myData[i][0]])
+            
             #Si ma date recherchee est coprise dans les dates ou le stock etait present dans le benchmark, alors je l'ajoute au tableau des dataset
     
     return dataset_Btw_Dates #Tableau contenant tous les stocks actifs pour la date donnee
@@ -90,6 +91,20 @@ def Prix_Journalier_Indice(data_Stocks):
 
     return (mean_Result/len(data_Stocks))
 
+def Recreer_Indice_Btw_Dates(list_Composition, list_All_Stocks, startDate, endDate):
+    list_Indice = []
+    diff_Date = endDate - startDate
+    for i in range(diff_Date.days):
+        #newDate = startDate + datetime.timedelta(i)
+        data_Stocks_ID_Actifs = Divide_Dataset_Composition_Btw_Dates(list_Composition, startDate + datetime.timedelta(i))
+        data_Stocks_Actifs = Extraire_Stocks_From_Data(list_All_Stocks, data_Stocks_ID_Actifs, startDate + datetime.timedelta(i))
+        #print("\n\n*Taille de data_Stocks_Actifs (les stocks présent dans l'indice à la date du : "+ (startDate + datetime.timedelta(i)).isoformat() +") > ", str(len(data_Stocks_Actifs)))
+        if(len(data_Stocks_Actifs) != 0):
+            indice_Prix_Journalier = Prix_Journalier_Indice(data_Stocks_Actifs)
+            #print("\n*Le prix journalier de l'indice en date du "+(startDate + datetime.timedelta(i)).isoformat() +" est de "+str(indice_Prix_Journalier))
+            list_Indice.append([startDate + datetime.timedelta(i) , indice_Prix_Journalier])
+    
+    return list_Indice
 
 def Write_Stocks_inCSV(tab_Values, file_Name):
     colonnes_Names_Csv = ['ID_Stock', 'Date','Close_Price','Price_Return']
@@ -118,13 +133,16 @@ if __name__=='__main__' :
     PATH_General = "Datas/"
     PATH_Compositon = PATH_General + "Composition.csv"
     data_Composition = Extraire_Dataset_Composition(PATH_Compositon)
+    #Date de recherche des stocks composant l'indice
+    """
     search_Date = datetime.date(2015, 7, 17) #17 juillet 2015
     data_Stocks_ID_Actifs = Divide_Dataset_Composition_Btw_Dates(data_Composition, search_Date)
+    
     #print(data_Composition)
     print("\nTaille de data_Composition (tous les stocks du fichiers composition > " + str(len(data_Composition)))
     print("\nTaille de data_Stocks_ID_Actifs (les stocks présent dans l'indice à la date du : "+
             search_Date.isoformat() +") > ", str(len(data_Stocks_ID_Actifs)))
-    
+    """
     
     PATH_Data1 = PATH_General+"data1.csv"
     PATH_Data2 = PATH_General+"data2.csv"
@@ -139,16 +157,22 @@ if __name__=='__main__' :
 
     #Liste contenant les ID+Date+Prix de cloture+Rendement des stocks actifs pour la date donnee.
     #Donc des stocks selectionnes dans 'data_Stocks_ID_Actifs'
+    """
     data_Stocks_Actifs = Extraire_Stocks_From_Data(all_Datas_Stocks, data_Stocks_ID_Actifs, search_Date)
     print("\nTaille de data_Stocks_Actifs (les stocks présent dans l'indice à la date du : "+
         search_Date.isoformat() +") > ", str(len(data_Stocks_Actifs)))
 
     indice_Prix_Journalier = Prix_Journalier_Indice(data_Stocks_Actifs)
     print("\n\n*Le prix journalier de l'indice en date du "+search_Date.isoformat() +" est de "+str(indice_Prix_Journalier))
-
+    """
     
-    name_Csv = "Stocks_Actifs_One-Date_PI2_CSV.csv"
-    Write_Stocks_inCSV(data_Stocks_Actifs, name_Csv)
+    #name_Csv = "Stocks_Actifs_One-Date_PI2_CSV.csv"
+    #Write_Stocks_inCSV(data_Stocks_Actifs, name_Csv)
+
+    date_Debut = datetime.date(2009, 1, 1) #1er Janvier 2009
+    date_Fin = datetime.date(2009, 1, 10) #10 Janvier 2009
+    list_Indice_Recreer = Recreer_Indice_Btw_Dates(data_Composition, all_Datas_Stocks, date_Debut, date_Fin)
+    print(list_Indice_Recreer)
 
     print("Fin d'execution du programme")
 
