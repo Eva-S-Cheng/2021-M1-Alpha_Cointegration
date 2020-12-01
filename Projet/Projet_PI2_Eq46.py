@@ -115,7 +115,7 @@ def Write_Stocks_inCSV(tab_Values, file_Name):
 if __name__=='__main__' :
 
     print("\n*** Projet PI2 - Equipe 46 ***")
-    PATH_General = "C:/Users/Megaport/OneDrive - De Vinci/4e Année ING-Finance/PI2-A4-Project/Datas/"
+    PATH_General = "Datas/"
     PATH_Compositon = PATH_General + "Composition.csv"
     data_Composition = Extraire_Dataset_Composition(PATH_Compositon)
     search_Date = datetime.date(2015, 7, 17) #17 juillet 2015
