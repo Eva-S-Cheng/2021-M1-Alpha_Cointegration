@@ -4,14 +4,10 @@
 import mysql.connector
 import datetime
 
+
+
 def Create_Tables_SQL(cursor):
     #? Connexion au serveur
-    #myConn = mysql.connector.connect(host= "127.0.0.1", port="3306",
-    #                                user="root", password="root",
-    #                                database="allDatas")
-    #cursor = myConn.cursor()
-
-    #* Section des operations a realiser sur la database
 
     #* Creation d'une table de données MySql
     cursor.execute("""use allDatas;""")
@@ -137,10 +133,14 @@ def Extraire_Dataset_Data(path, cursor, first_Id_Value):
 
 if __name__=='__main__' :
 
+    #! Il faut en amont activer son serveur SQL
+    #! Remplir avec les user et passwords de chacun
     myConn = mysql.connector.connect(host= "127.0.0.1", port="3306",
                                     user="root", password="root",
                                     database="allDatas")
     cursor = myConn.cursor()
+    
+    #* Section des operations a realiser sur la database
 
     Create_Tables_SQL(cursor) #Creation des tables Composition et Datas
     
