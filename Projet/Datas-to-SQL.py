@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # Librairies
+#* py -m pip install mysql-connector
 import mysql.connector
 import datetime
 
@@ -125,8 +126,8 @@ def Extraire_Dataset_Data(path, cursor, first_Id_Value):
         Insert_Datas_In_Datas(cursor, reference)
 
     #return data #Retourne le contenu du fichier Composition.csv
-    return len(data) #retourne la taille du tableau qui nous servira de premier index pour le prochain
-    #Comme ca on garde une continuité des index dans la database Datas
+    return len(data) #Retourne la taille du tableau qui nous servira de premier index pour le prochain id
+    #Comme ca on garde une continuité des index (et des id) dans la database Datas
 
 
 
@@ -170,6 +171,6 @@ if __name__=='__main__' :
     first_Id += Extraire_Dataset_Data(PATH_Data4,cursor,first_Id)
     first_Id += Extraire_Dataset_Data(PATH_Data5,cursor,first_Id)
 
-    myConn.commit() #Pour sauvegarder les données dans la table
+    myConn.commit() #! Pour sauvegarder les données dans la table
     myConn.close() #Ferme le flux
 
