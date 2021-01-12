@@ -143,7 +143,7 @@ if __name__=='__main__' :
     
     #* Section des operations a realiser sur la database
 
-    Create_Tables_SQL(cursor) #Creation des tables Composition et Datas
+    #? Create_Tables_SQL(cursor) #Creation des tables Composition et Datas
     
     """
     reference = (1,1,"2007-01-01","2020-09-24")
@@ -152,8 +152,9 @@ if __name__=='__main__' :
     Insert_Datas_In_Datas(cursor,reference) #Ajout d'une valeur dans la table Datas
     """
     PATH_General = "Datas/"
+    #PATH_General = "Projet/Datas/"
     PATH_Compositon = PATH_General + "Composition.csv"
-    Extraire_Dataset_Composition(PATH_Compositon, cursor)
+    #? Extraire_Dataset_Composition(PATH_Compositon, cursor)
 
     PATH_Data1 = PATH_General+"data1.csv"
     PATH_Data2 = PATH_General+"data2.csv"
@@ -165,11 +166,21 @@ if __name__=='__main__' :
     #Il faut donc une continuité entre chaque lignes des differentes feuilles Excel
     #La méthode Extraire_Dataset_Data() renvoie donc la taille du tableau des datas 
     #La valeur de cette taille sera la valeur du premier id de la première ligne de la feuille Excel suivante
+    """
     first_Id += Extraire_Dataset_Data(PATH_Data1,cursor,first_Id)
     first_Id += Extraire_Dataset_Data(PATH_Data2,cursor,first_Id)
     first_Id += Extraire_Dataset_Data(PATH_Data3,cursor,first_Id)
     first_Id += Extraire_Dataset_Data(PATH_Data4,cursor,first_Id)
     first_Id += Extraire_Dataset_Data(PATH_Data5,cursor,first_Id)
+    """
+    
+    #Acceder a des données
+    #Compter le nombre de stocks dans le fichier Composition
+    cursor.execute(""" SELECT COUNT(DISTINCT(num_Stock)) FROM alldatas.composition; """)
+    #cursor.execute(""" SELECT trade_Date, AVG(log(close_Value)) FROM alldatas.datas WHERE (trade_Date BETWEEN "2009-01-01" AND "2020-01-21") GROUP BY alldatas.datas.trade_Date ; """)
+    
+    results = cursor.fetchall()
+    print(results)
 
     myConn.commit() #! Pour sauvegarder les données dans la table
     myConn.close() #Ferme le flux
