@@ -45,9 +45,11 @@ def Create_Tables_SQL(cursor):
 
 
 def Insert_Datas_In_Composition(cursor,ref):
+    #Ref doit etre un tuple
     cursor.execute("""INSERT INTO  allDatas.Composition(id, num_Stock, start_Date, end_Date) VALUES(%s, %s, %s, %s);""", ref)
 
 def Insert_Datas_In_Datas(cursor, ref):
+    #Ref doit etre un tuple
     cursor.execute(""" INSERT INTO alldatas.Datas(id, num_Stock,trade_Date,open_Value,max_Value,min_Value,close_Value,rendement) VALUES(%s, %s, %s, %s, %s, %s, %s, %s);""", ref)
 
 
