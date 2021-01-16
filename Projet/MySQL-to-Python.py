@@ -56,6 +56,7 @@ def Benchmark_Btw_2Dates(df, end_Date, window_Days):
     #start_Date = start_Date.strftime('%Y-%m-%d')
 
     benchmark_d1_to_d2 = df[(df['trade_Date'] >= start_Date) & (df['trade_Date']<= end_Date)]
+    benchmark_d1_to_d2.reset_index(drop = True, inplace=True)
     return benchmark_d1_to_d2
 
 
@@ -95,7 +96,7 @@ def Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, end_Date, window_days, nb_Of
 
 #Methode permettant de creer la matrice des Close prices en gardant uniquement les colonnes n'ayant pas de datas manquantes
 # Ajoute en nom de colonne les numéros des stocks utilisés
-def Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t):
+def Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J):
     
     #Dataframe devant a la fin contenir tous les closes prices ordonnés par colonne avec chaque colonne 1 stock
     #Le nombre de lignes sera la taille de la fenêtre des trade_Date
@@ -133,13 +134,18 @@ def Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t):
 #Methode pour diviser un dataset en 2 sous-dataset avec des pourcentages précis
 def Split_Df_Train_Test(df_x, df_y, percent_Test):
     #* df_x, df_y sont les dataframes à diviser
-    #* percent_Test sont les pourcentage (0.80 pour 80%) de séparation des Train et Test datas
+    #* percent_Test sont les pourcentage (0.20 pour 20%) de séparation des Train et Test datas
     train_x, test_x, train_y, test_y = train_test_split(df_x, df_y, test_size = percent_Test, random_state = 3, shuffle = True)
+    train_x.reset_index(drop = True, inplace=True)
+    test_x.reset_index(drop = True, inplace=True)
+    train_y.reset_index(drop = True, inplace=True)
+    test_y.reset_index(drop = True, inplace=True)
+
     return train_x, test_x, train_y, test_y
 
 
 
-def Fit_Model(X_train, Y_train, X_test):
+def Fit_Model(X_train, Y_train):
     model = LinearRegression(fit_intercept=True)
     model.fit(X_train, Y_train['AVG(log(close_Value))'])
 
@@ -180,7 +186,7 @@ if __name__=='__main__' :
     #Requete_Test_SelectAll(dbConnection) 
 
     myDate_End = "2018-01-21"
-    windowSize = 100
+    windowSize = 100 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
     #print(compo_Indice_Date_t)
@@ -196,7 +202,7 @@ if __name__=='__main__' :
     all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConnection, myDate_End, windowSize, len(compo_Indice_Date_t))
     #print(all_Close_Price)
 
-    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t)
+    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
     print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
     pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
     print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
@@ -209,11 +215,11 @@ if __name__=='__main__' :
     #On predit le y^ avec le model 
     #On compare le Y et y^ (ex: MSE ou autre)
 
-    percentage_Test_Train = 0.2 #20%
+    percentage_Test_Train = 0.4 #40%
     X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
 
     #We fit our model
-    ourModel = Fit_Model(X_train, Y_train, X_test)
+    ourModel = Fit_Model(X_train, Y_train)
     #Make predictions
     predictions = ourModel.predict(X_test)
     #Affichage des resultats
@@ -222,7 +228,7 @@ if __name__=='__main__' :
     print("\n$$ ANALYSE >\n")
     print("* Le MSE est très proche de 0\n",
             "* Le R-squared error est très proche de 1\n",
-            "* Le MAE Mean Absolte Error est très proche de 0\n",
+            "* Le MAE Mean Absolute Error est très proche de 0\n",
             "** ==> Bon modèle\n")
     print("\n/!\ > Tous les p-values sont < 0.05\n",
             "\t-Soit tous les stocks sont significatifs (ou alors leurs log(Price))\n",
