@@ -34,14 +34,17 @@ def Composition_Indice_Date_t(dbConn, myDate):
     #! myDate DOIT être un STRING de la forme YYYY-MM-DD
     ref = tuple((myDate, myDate))
 
-    frame = pd.read_sql("SELECT num_Stock FROM composition WHERE start_Date < %s AND end_Date > %s;", dbConn, params=ref)
+    frame = pd.read_sql("SELECT DISTINCT(num_Stock) FROM composition WHERE start_Date < %s AND end_Date > %s AND composition.num_Stock IN (SELECT DISTINCT(num_Stock) FROM Datas);", dbConn, params=ref)
+    #Dans cette requete, on verifie que les sotcks composant l'indice ont bien des datas dasn la table Datas
+    #En effet pour les stocks 23 et 757, ils sont dans la data Composition MAIS PAS dans la data Datas
+    #Cela engendrera donc une erreur si on les utilise dans la compiosition mais pas dans Datas
     pd.set_option('display.expand_frame_repr', False)
     return frame
 
 
 #Méthode permettant de recréer l'indice
 def Recreation_Indice(dbConn):
-    frame = pd.read_sql("SELECT trade_Date, AVG(log(close_Value)) FROM datas GROUP BY datas.trade_Date ;", dbConn)
+    frame = pd.read_sql("SELECT trade_Date, log(AVG(close_Value)) FROM datas GROUP BY datas.trade_Date ;", dbConn)
     pd.set_option('display.expand_frame_repr', False)
     return frame
 
@@ -87,8 +90,11 @@ def Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, end_Date, window_days, nb_Of
     start_Date = start_Date.strftime('%Y-%m-%d')
 
     ref = tuple((start_Date, end_Date, end_Date, end_Date))
-    frame = pd.read_sql("SELECT log(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT num_Stock FROM composition WHERE start_Date < %s AND end_Date > %s);", dbConn, params=ref)
-    
+    frame = pd.read_sql("SELECT log(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT DISTINCT(num_Stock) FROM composition WHERE start_Date < %s AND end_Date > %s AND composition.num_Stock IN (SELECT DISTINCT(num_Stock) FROM Datas));", dbConn, params=ref)
+    #frame = pd.read_sql("SELECT num_stock, log(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT num_Stock FROM composition WHERE start_Date < %s AND end_Date > %s);", dbConn, params=ref)
+
+    nb_Of_Stocks = int(len(frame)/15) #len(frame) retourne le nombre de ligne dans la dataframe
+    #/On divise par le nombre de jours pour obtenir le nombre de stocks utilises
     frameList = np.array_split(frame, nb_Of_Stocks)
 
     return frameList
@@ -144,12 +150,11 @@ def Split_Df_Train_Test(df_x, df_y, percent_Test):
     return train_x, test_x, train_y, test_y
 
 
-
 def Fit_Model(X_train, Y_train):
     model = LinearRegression(fit_intercept=True)
-    model.fit(X_train, Y_train['AVG(log(close_Value))'])
+    linearModel = model.fit(X_train, Y_train['log(AVG(close_Value))'])
 
-    return model
+    return linearModel
 
 
 def Print_Results(model, X_test, Y_test, Pred):
@@ -162,15 +167,16 @@ def Print_Results(model, X_test, Y_test, Pred):
     print("\n* Coefficients du model > \n", coeff_Beta_model, "\n\n")
 
     #Calcul du MSE pr les predictions et true_Outputs
-    MSE_model = mean_squared_error(Y_test['AVG(log(close_Value))'], Pred)
+    MSE_model = mean_squared_error(Y_test['log(AVG(close_Value))'], Pred)
     print("\n$ MSE = ", MSE_model)
-    R2_model = r2_score(Y_test['AVG(log(close_Value))'], Pred)
+    R2_model = r2_score(Y_test['log(AVG(close_Value))'], Pred)
     print("$ R2 = ", R2_model)
-    MAE_model = mean_absolute_error(Y_test['AVG(log(close_Value))'], Pred)
+    MAE_model = mean_absolute_error(Y_test['log(AVG(close_Value))'], Pred)
     print("$ MAE = ", MAE_model)
 
-    list_p_value = stats.coef_pval(model, X_train, Y_train['AVG(log(close_Value))'])
+    list_p_value = stats.coef_pval(model, X_train, Y_train['log(AVG(close_Value))'])
     print("\n* p_values > \n", list_p_value)
+    #print("\n\n",list_p_value[0])
 
 
 
@@ -185,8 +191,11 @@ if __name__=='__main__' :
     #Requette test
     #Requete_Test_SelectAll(dbConnection) 
 
-    myDate_End = "2018-01-21"
-    windowSize = 100 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    myDate_End = "2019-01-21"
+    windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+
+    print("\n*** Parametres ***\n")
+    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours\n\n")
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
     #print(compo_Indice_Date_t)
@@ -221,9 +230,13 @@ if __name__=='__main__' :
     #We fit our model
     ourModel = Fit_Model(X_train, Y_train)
     #Make predictions
+    #predictions = ourModel.predict(X_train)
     predictions = ourModel.predict(X_test)
+
     #Affichage des resultats
+    #Print_Results(ourModel, X_train, Y_train, predictions)
     Print_Results(ourModel, X_test, Y_test, predictions)
+
 
     print("\n$$ ANALYSE >\n")
     print("* Le MSE est très proche de 0\n",
