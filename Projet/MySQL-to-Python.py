@@ -81,7 +81,7 @@ def Nb_Jours_De_Trade(dbConn, end_Date, window_Days):
 
 
 #Methode pour extraire les log(close_Price) des stocks contenus dans l'indice en date end_Date et pour une fenêtre de x jours
-def Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, end_Date, window_days, nb_Of_Stocks):
+def Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, end_Date, window_days, nb_TradeDays):
     #end_Date DOIT être un STRING de la forme YYYY-MM-DD
     
     #Creation de start_Date qui est end_Date - Window_Days
@@ -93,8 +93,8 @@ def Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, end_Date, window_days, nb_Of
     frame = pd.read_sql("SELECT log(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT DISTINCT(num_Stock) FROM composition WHERE start_Date < %s AND end_Date > %s AND composition.num_Stock IN (SELECT DISTINCT(num_Stock) FROM Datas));", dbConn, params=ref)
     #frame = pd.read_sql("SELECT num_stock, log(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT num_Stock FROM composition WHERE start_Date < %s AND end_Date > %s);", dbConn, params=ref)
 
-    nb_Of_Stocks = int(len(frame)/15) #len(frame) retourne le nombre de ligne dans la dataframe
-    #/On divise par le nombre de jours pour obtenir le nombre de stocks utilises
+    nb_Of_Stocks = int(len(frame)/nb_TradeDays) #len(frame) retourne le nombre de ligne dans la dataframe
+    #/On divise par le nombre de jours de trade pour obtenir le nombre de stocks utilises
     frameList = np.array_split(frame, nb_Of_Stocks)
 
     return frameList
@@ -192,10 +192,10 @@ if __name__=='__main__' :
     #Requete_Test_SelectAll(dbConnection) 
 
     myDate_End = "2019-01-21"
-    windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    windowSize = 200 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
 
     print("\n*** Parametres ***\n")
-    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours\n\n")
+    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours")
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
     #print(compo_Indice_Date_t)
@@ -207,8 +207,9 @@ if __name__=='__main__' :
     #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
     nb_J = Nb_Jours_De_Trade(dbConnection, myDate_End, windowSize) #nb_J est un integer 
     #print(nb_J)
+    print("Nombre de jours de trade effectifs > ", nb_J,"\n\n")
     
-    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConnection, myDate_End, windowSize, len(compo_Indice_Date_t))
+    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConnection, myDate_End, windowSize, nb_J)
     #print(all_Close_Price)
 
     matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
