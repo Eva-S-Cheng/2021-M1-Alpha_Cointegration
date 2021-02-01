@@ -7,6 +7,7 @@ import mysql.connector
 import pandas as pd
 import numpy as np
 import datetime
+import matplotlib.pyplot as plt
 
 #Pour linear models
 #* py -m pip install sklearn
@@ -15,6 +16,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error #metrics pr MSE, R², MAE
 from sklearn.model_selection import train_test_split
 from regressors import stats
+
+import seaborn as sb #Pour la correlation
 
 
 
@@ -180,6 +183,69 @@ def Print_Results(model, X_test, Y_test, Pred):
 
 
 
+def Select_Rendement(dbConn, end_Date, window_days, nb_TradeDays, compo_Indice_Date_t):
+    #end_Date DOIT être un STRING de la forme YYYY-MM-DD
+    
+    #Creation de start_Date qui est end_Date - Window_Days
+    start_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d')
+    start_Date = start_Date - datetime.timedelta(days = window_days)
+    start_Date = start_Date.strftime('%Y-%m-%d')
+
+    ref = tuple((start_Date, end_Date, end_Date, end_Date))
+    frame = pd.read_sql("SELECT rendement FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT DISTINCT(num_Stock) FROM composition WHERE start_Date < %s AND end_Date > %s AND composition.num_Stock IN (SELECT DISTINCT(num_Stock) FROM Datas));", dbConn, params=ref)
+    #frame = pd.read_sql("SELECT num_stock, log(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (SELECT num_Stock FROM composition WHERE start_Date < %s AND end_Date > %s);", dbConn, params=ref)
+
+    nb_Of_Stocks = int(len(frame)/nb_TradeDays) #len(frame) retourne le nombre de ligne dans la dataframe
+    #/On divise par le nombre de jours de trade pour obtenir le nombre de stocks utilises
+    frameListYield = np.array_split(frame, nb_Of_Stocks)
+
+    #Dataframe devant a la fin contenir tous les closes prices ordonnés par colonne avec chaque colonne 1 stock
+    #Le nombre de lignes sera la taille de la fenêtre des trade_Date
+    matrix_All_Yields = np.asarray(frameListYield[0])
+
+    #On split la df en sous-dataframe dans une list
+    #Chaque sous-dataframe correspond à 1 colonne (donc 1 stock) sur la période de la fenêtre
+    for i in range(len(compo_Indice_Date_t)-1):
+
+        if len(frameListYield[i+1]) == nb_TradeDays :
+            #Si toute la colonne a des valeurs (le stock était dans la composition sur toute la durée de la fenêtre)
+            matrix_All_Yields= np.append(matrix_All_Yields,(np.asarray(frameListYield[i+1])),axis=1)
+            #Rmq : Si ce n'est pas respecté alors le stock n'est pas ajouté à la matrice car il manque des valeurs
+        
+        else:
+            #Il manque des prix car le stock n'etait pas tous les jours dans la composition
+            compo_Indice_Date_t.drop([i+1], inplace = True)
+            #On supprime les indices dans compo_Indice_Date_t des stock que l'on a retiré de la matrice matrix_All_ClosePrice
+    
+    #On est sorti du for et on reset les index de la df compo_Indice_Date_t
+    compo_Indice_Date_t.reset_index(drop = True, inplace=True)
+    #print(compo_Indice_Date_t)
+
+    #print(matrix_All_ClosePrice)
+    column_Names = compo_Indice_Date_t.iloc[:,0]
+    column_Names = list(column_Names)
+    #print(column_Names)
+
+    #On renomme les colonne de notre matrice avec uniquement les stocks ayant toutes les datas
+    final_Df_All_Yield = pd.DataFrame(matrix_All_Yields, columns=column_Names)
+    
+    return final_Df_All_Yield
+
+def Correlation_Test(df):
+    correlation_matrix = df.corr()
+    print(correlation_matrix)
+    plt.matshow(correlation_matrix.iloc[0:15,0:15], fignum="Corr_matshow")
+    #plt.show()
+
+    plt.figure(num="Corr_heatmap")
+    sb.heatmap(correlation_matrix.iloc[0:15,0:15], 
+            xticklabels=correlation_matrix.iloc[0:15,0:15].columns,
+            yticklabels=correlation_matrix.iloc[0:15,0:15].columns,
+            cmap='RdBu_r',
+            annot=True,
+            linewidth=0.5)
+    plt.show()
+
 #? MAIN
 if __name__=='__main__' :
 
@@ -192,7 +258,7 @@ if __name__=='__main__' :
     #Requete_Test_SelectAll(dbConnection) 
 
     myDate_End = "2019-01-21"
-    windowSize = 200 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
 
     print("\n*** Parametres ***\n")
     print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours")
@@ -209,6 +275,7 @@ if __name__=='__main__' :
     #print(nb_J)
     print("Nombre de jours de trade effectifs > ", nb_J,"\n\n")
     
+
     all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConnection, myDate_End, windowSize, nb_J)
     #print(all_Close_Price)
 
@@ -247,6 +314,17 @@ if __name__=='__main__' :
     print("\n/!\ > Tous les p-values sont < 0.05\n",
             "\t-Soit tous les stocks sont significatifs (ou alors leurs log(Price))\n",
             "\t-Soit il y a un problème dans le modèle ou l'approche\n")
+
+    """
+
+    matrix_Yield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
+    pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+    print(matrix_Yield) 
+
+    """
+    
+    Correlation_Test(X_train)
+
 
 
     dbConnection.close() #Fermeture du strem avec MySql
