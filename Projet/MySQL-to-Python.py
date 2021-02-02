@@ -9,6 +9,10 @@ import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 
+#Pour l'ADF
+import statsmodels.api as sm 
+from statsmodels.tsa.stattools import adfuller
+
 #Pour linear models
 #* py -m pip install sklearn
 #* py -m pip install regressors
@@ -182,6 +186,21 @@ def Print_Results(model, X_test, Y_test, Pred):
     #print("\n\n",list_p_value[0])
 
 
+def ADF(Y_test, Pred):
+    residuals = Y_test['log(AVG(close_Value))'] - Pred
+    result = adfuller(residuals)
+    print('ADF Statistic: %f' % result[0])
+    print('p-value: %f' % result[1])
+    print('Critical Values:')
+    for key, value in result[4].items():
+        print('\t%s: %.3f' % (key, value))
+        
+    if result[0] < result[4]["5%"]:
+        print ("Reject Ho - Time Series is Stationary => Portfolio is Stationary and the stocks are cointegrated with more than 95% certainty")
+    else:
+        print ("Failed to Reject Ho - Time Series is Non-Stationary\n\n")
+
+
 
 def Select_Rendement(dbConn, end_Date, window_days, nb_TradeDays, compo_Indice_Date_t):
     #end_Date DOIT être un STRING de la forme YYYY-MM-DD
@@ -322,9 +341,13 @@ if __name__=='__main__' :
     print(matrix_Yield) 
 
     """
-    
+
+    #TEST ADF
+    ADF(Y_test, predictions)
+
+    #CORRELATION
     Correlation_Test(X_train)
 
-
+    
 
     dbConnection.close() #Fermeture du strem avec MySql
