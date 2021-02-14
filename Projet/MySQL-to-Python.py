@@ -56,7 +56,6 @@ def Recreation_Indice(dbConn):
     return frame
 
 
-
 def Benchmark_Btw_2Dates(df, end_Date, window_Days):
     start_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d')
     start_Date = start_Date - datetime.timedelta(days = window_Days)
@@ -250,20 +249,77 @@ def Select_Rendement(dbConn, end_Date, window_days, nb_TradeDays, compo_Indice_D
     
     return final_Df_All_Yield
 
-def Correlation_Test(df):
-    correlation_matrix = df.corr()
+def Correlation_Matrix(df_stocks, df2):
+    matrix = pd.concat([df_stocks, df2.iloc[:,1]], axis = 1)
+    print(matrix)
+    correlation_matrix = matrix.corr()
     print(correlation_matrix)
-    plt.matshow(correlation_matrix.iloc[0:15,0:15], fignum="Corr_matshow")
+    #plt.matshow(correlation_matrix.iloc[490:,490:], fignum="Corr_matshow")
     #plt.show()
 
     plt.figure(num="Corr_heatmap")
-    sb.heatmap(correlation_matrix.iloc[0:15,0:15], 
-            xticklabels=correlation_matrix.iloc[0:15,0:15].columns,
-            yticklabels=correlation_matrix.iloc[0:15,0:15].columns,
+    sb.heatmap(correlation_matrix.iloc[490:,490:], 
+            xticklabels=correlation_matrix.iloc[490:,490:].columns,
+            yticklabels=correlation_matrix.iloc[490:,490:].columns,
             cmap='RdBu_r',
             annot=True,
             linewidth=0.5)
     plt.show()
+
+    corr_stocks_indice = correlation_matrix.iloc[:len(correlation_matrix)-1, len(correlation_matrix.columns)-1] #Correlation entre les stocks et l'indice
+    corr_stocks_stocks = correlation_matrix.iloc[0:len(correlation_matrix)-1, 0:len(correlation_matrix.columns)-1] #Correlation entre les stocks et eux-meme
+
+    return corr_stocks_indice, corr_stocks_stocks
+
+def Rendements_Indice(dbConn, end_Date, window_days):
+    """Méthode permettant de calculer les rendement de l'indice entre 2 dates"""
+    #Creation de start_Date qui est end_Date - Window_Days
+    start_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d')
+    start_Date = start_Date - datetime.timedelta(days = window_days)
+    start_Date = start_Date.strftime('%Y-%m-%d')
+    ref = tuple((start_Date, end_Date))
+
+    frame = pd.read_sql("SELECT trade_Date, AVG(close_Value) FROM datas WHERE (trade_Date BETWEEN %s AND %s) GROUP BY datas.trade_Date ;", dbConn, params=ref)
+    pd.set_option('display.expand_frame_repr', False)
+
+    rendement = 100 * (frame.iloc[len(frame)-1, 1] - frame.iloc[0, 1])/frame.iloc[0, 1] # =(Valeur indice final - Valeur indice initiale) / Valeur indice initiale
+    #On voudra savoir si le rendement est négatif ou positif
+    return rendement #Rendement en pourcentage
+
+def Selection_Stocks():
+    #* APPROCHE 1 :
+    #Si rendement positif -> On prend les stocks fortement et moins fortement corrélés. Garder une marge pour ne pas etre dans les extremes
+    #Si rendement négatif -> On prend les stocks fortement et moins fortement anti-corrélés. Garder une marge pour ne pas etre dans les extremes
+    #? Prend-t-on uniquement ceux qui sont aux extrèmes (peu de diversification) ?
+    
+    #* APPROCHE 2 :
+    # On regarde la correlation des stocks ENTRE EUX -> On tri pour garder 1 seul stock qui représente le mieux la famille fortement corrélée (Celui avec le meilleur rendement par exemple)
+    #   Garder une marge pour ne pas etre dans les extremes (Prendre ceux au-dessus de +-0.6)
+    # On regarde la correlation des stocks sélectionnés ci-dessus avec l'indice -> On sélectionne le panier final suivant l' APPROCHE 1. 
+    #   Cela donnera des stocks fortement corrélés avec l'indice mais aussi des stocks moins corrélés (Pour ne pas mettre tous les oeufs dans le même panier)
+    print("Flag non fini")
+
+def Approche1_Selection_stock_enFonction_rendementIndice(rendement, df, taille_panierStocks):
+    """Methode nommee Approche 1 : Selection des stocks en fonction du rendement de l'indice"""
+    #mat_corr = Matrice de correlation
+    #taille_panierStocks = Taille du panier de stocks à prendre
+    counter = 0 #Compteur du nombre de stocks sélectionné
+
+    if(rendement >= 0):
+        #Si rendement positif -> On prend les stocks fortement et moins fortement corrélés
+        #On supprime les valeurs de correlation négative
+        filtre = df[:] >=0.5
+        stocksToBeKept = df[filtre]
+
+    else :
+        #Si rendement négatif -> On prend les stocks fortement et moins fortement anti-corrélés
+        #On supprime les valeurs de correlation positive
+        filtre = df[:] <-0.5
+        stocksToBeKept = df[filtre]
+
+    return stocksToBeKept
+
+
 
 #? MAIN
 if __name__=='__main__' :
@@ -278,9 +334,10 @@ if __name__=='__main__' :
 
     myDate_End = "2019-01-21"
     windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    taille_panier = 30 #Taille du panier de stocks
 
     print("\n*** Parametres ***\n")
-    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours")
+    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours","\nPanier de ",taille_panier," stocks\n")
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
     #print(compo_Indice_Date_t)
@@ -315,6 +372,7 @@ if __name__=='__main__' :
     X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
 
     #We fit our model
+    """
     ourModel = Fit_Model(X_train, Y_train)
     #Make predictions
     #predictions = ourModel.predict(X_train)
@@ -335,6 +393,7 @@ if __name__=='__main__' :
             "\t-Soit il y a un problème dans le modèle ou l'approche\n")
 
     """
+    
 
     matrix_Yield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
     pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
@@ -344,10 +403,21 @@ if __name__=='__main__' :
 
     #TEST ADF
     ADF(Y_test, predictions)
+    """
 
     #CORRELATION
-    Correlation_Test(X_train)
+    corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
+    print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
+    print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
 
+    rendement_Indice = Rendements_Indice(dbConnection, myDate_End, windowSize)
+    print("\n*Rendement de l'indice", rendement_Indice,"%\n")
     
+    panier_Approche1 = Approche1_Selection_stock_enFonction_rendementIndice(rendement_Indice, corr_stocks_indice, taille_panier)
+    print(panier_Approche1)
 
     dbConnection.close() #Fermeture du strem avec MySql
+
+
+#! A FAIRE :
+#* Finir l'approche 1 & 2
