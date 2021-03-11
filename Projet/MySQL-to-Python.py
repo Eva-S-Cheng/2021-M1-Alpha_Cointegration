@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Librairies
+#region Librairies
 #* py -m pip install mysql-connector
 #* py -m pip install mysql-connector-python
 import mysql.connector
@@ -22,9 +22,9 @@ from sklearn.model_selection import train_test_split
 from regressors import stats
 
 import seaborn as sb #Pour la correlation
+#endregion
 
-
-
+#region Recuperation des datas sur MySQL
 def Requete_Test_SelectAll(dbConn):
     
     frame = pd.read_sql("SELECT * FROM alldatas.composition;", dbConn)
@@ -34,7 +34,6 @@ def Requete_Test_SelectAll(dbConn):
 
 
 #Methode retournant la composition de l'indice pour une date donnee
-#! DEMANDER A REMI CAR PRBL DE QUANTITE DE STOCKS (709 pr une date precise et non 500)
 def Composition_Indice_Date_t(dbConn, myDate):
     # dbConn est la connexion a la data base
     # myDate est la date a laquelle on cherche la composition de l'indice
@@ -49,8 +48,8 @@ def Composition_Indice_Date_t(dbConn, myDate):
     return frame
 
 
-#Méthode permettant de recréer l'indice
 def Recreation_Indice(dbConn):
+    """Méthode permettant de recréer l'indice """
     frame = pd.read_sql("SELECT trade_Date, log(AVG(close_Value)) FROM datas GROUP BY datas.trade_Date ;", dbConn)
     pd.set_option('display.expand_frame_repr', False)
     return frame
@@ -109,6 +108,7 @@ def Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, end_Date, window_days, nb_Tr
 #Methode permettant de creer la matrice des Close prices en gardant uniquement les colonnes n'ayant pas de datas manquantes
 # Ajoute en nom de colonne les numéros des stocks utilisés
 def Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J):
+    """Methode permettant de creer la matrice des Close prices en gardant uniquement les colonnes n'ayant pas de datas manquantes"""
     
     #Dataframe devant a la fin contenir tous les closes prices ordonnés par colonne avec chaque colonne 1 stock
     #Le nombre de lignes sera la taille de la fenêtre des trade_Date
@@ -142,9 +142,13 @@ def Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J):
     
     return final_Df_All_ClosePrice
 
+#endregion
+
+#region Regression lineaire & ADF
 
 #Methode pour diviser un dataset en 2 sous-dataset avec des pourcentages précis
 def Split_Df_Train_Test(df_x, df_y, percent_Test):
+    """#Methode pour diviser un dataset en 2 sous-dataset avec des pourcentages précis"""
     #* df_x, df_y sont les dataframes à diviser
     #* percent_Test sont les pourcentage (0.20 pour 20%) de séparation des Train et Test datas
     train_x, test_x, train_y, test_y = train_test_split(df_x, df_y, test_size = percent_Test, random_state = 3, shuffle = True)
@@ -199,6 +203,7 @@ def ADF(Y_test, Pred):
     else:
         print ("Failed to Reject Ho - Time Series is Non-Stationary\n\n")
 
+#endregion
 
 
 def Select_Rendement(dbConn, end_Date, window_days, nb_TradeDays, compo_Indice_Date_t):
@@ -249,14 +254,18 @@ def Select_Rendement(dbConn, end_Date, window_days, nb_TradeDays, compo_Indice_D
     
     return final_Df_All_Yield
 
+
+
 def Correlation_Matrix(df_stocks, df2):
     matrix = pd.concat([df_stocks, df2.iloc[:,1]], axis = 1)
-    print(matrix)
+    #print(matrix)
     correlation_matrix = matrix.corr()
-    print(correlation_matrix)
+    #print(correlation_matrix)
     #plt.matshow(correlation_matrix.iloc[490:,490:], fignum="Corr_matshow")
     #plt.show()
 
+    #Affichage de la matrice de correlation
+    """
     plt.figure(num="Corr_heatmap")
     sb.heatmap(correlation_matrix.iloc[490:,490:], 
             xticklabels=correlation_matrix.iloc[490:,490:].columns,
@@ -265,6 +274,7 @@ def Correlation_Matrix(df_stocks, df2):
             annot=True,
             linewidth=0.5)
     plt.show()
+    """
 
     corr_stocks_indice = correlation_matrix.iloc[:len(correlation_matrix)-1, len(correlation_matrix.columns)-1] #Correlation entre les stocks et l'indice
     corr_stocks_stocks = correlation_matrix.iloc[0:len(correlation_matrix)-1, 0:len(correlation_matrix.columns)-1] #Correlation entre les stocks et eux-meme
@@ -285,6 +295,8 @@ def Rendements_Indice(dbConn, end_Date, window_days):
     rendement = 100 * (frame.iloc[len(frame)-1, 1] - frame.iloc[0, 1])/frame.iloc[0, 1] # =(Valeur indice final - Valeur indice initiale) / Valeur indice initiale
     #On voudra savoir si le rendement est négatif ou positif
     return rendement #Rendement en pourcentage
+
+#region Selection des stocks
 
 def Selection_Stocks():
     #* APPROCHE 1 :
@@ -320,6 +332,156 @@ def Approche1_Selection_stock_enFonction_rendementIndice(rendement, df, taille_p
     return stocksToBeKept
 
 
+def Select_Corr_Stocks_Stocks(df, seuil, panier_size):
+    """Selection des stocks en fonction de la corrélation entre stocks"""
+    temp = df.apply(lambda x: np.abs(x))
+    col_sum = temp.sum(axis = 1, skipna = True)
+    col_sum = col_sum / col_sum.size
+    
+    stocksToBeKept = col_sum[col_sum[:] < seuil]
+    
+    return stocksToBeKept.iloc[ : panier_size]
+
+def Select_Corr_Stocks_Indice(df, panier_size):
+    """Selection des stocks en fonction de la corrélation entre stocks et indice"""
+    #Tri de la dataframe qui est la amtrice de correlation Stocks-Indice
+    #Tri decroissant pour avoir les plus hautes correlation en debut de dataframe
+    df_sorted = df.sort_values('index', ascending = False)
+    return df_sorted.iloc[ : panier_size]
+
+#endregion
+
+
+def Plot_Indice(df_rendements):
+    """Methode de plot des rendements de l'indice"""
+    df_mean_rendements = df_rendements.mean(axis = 1) #Moyenne des rendements du jour sur les lignes
+    fig = plt.figure()
+    fig.suptitle("Rendements de l'indice")
+    plt.plot(df_mean_rendements)
+    plt.show()
+
+
+def Rendement_List_Stocks(dbConn, end_Date, window_days, list_Stocks):
+    """Methode retournant la moyenne des rendements d'une liste de stocks entre 2 dates"""
+    
+    #Creation de start_Date qui est end_Date - Window_Days
+    start_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d')
+    start_Date = start_Date - datetime.timedelta(days = window_days)
+    start_Date = start_Date.strftime('%Y-%m-%d')
+
+    #Jointure des valeurs de list_Stocks en 1 string unique
+    for i in range(len(list_Stocks)):
+        list_Stocks[i] = str(list_Stocks[i])    
+    str_List_Stocks = ','.join(list_Stocks)
+
+    ref = tuple((start_Date, end_Date, str_List_Stocks))
+
+    frame = pd.read_sql("SELECT AVG(rendement) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (%s) GROUP BY datas.trade_Date ;", dbConn, params=ref)
+    pd.set_option('display.expand_frame_repr', False)
+
+    return frame #Moyenne des rendements
+
+
+#region Section Rebalancement
+
+#! Idee amelioration : Proposer le choix de methode de selection du portfolio (Correlation Stock Vs Stock, Stock Vs Indice, autre)
+def Rebalancement_UnCycle(dbConn, previous_Active_Stocks, actual_Date, rebalancing_size, taille_panier, fenetre_Analyse, benchmark):
+    """Methode faisant un unique rebalancement et renvoyant la nouvelle liste des stocks"""
+    """
+    * dbConn = connexion a la base de donne MySQL
+    * previous_Active_Stocks = Liste des stocks actuellement dans le portefeuille et devant être changés
+    * actual_Date = date actuelle lors du rebalancement
+    * rebalancing_size = nombre de jours entre chaque rebalancement = Frequence de rebalancement
+    * taille_panier = taille du portefeuille
+    * fenetre_Analyse = taille de la fenêtre sur laquelle nous allons baser notre analyse pour rebalancer notre portfeuille (ne pas la prendre trop petite ou trop grande, 200 est bien)
+    * benchmark = recration de l'indice
+    """
+
+    #Etape 1 :
+    # Recuperer le rendement moyen de chaque jour depuis le dernier rebalancement en fonction des stocks composant le panier actuellement (ces stocks n'ont pas encore ete changes)
+    df_Rendements_LastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, previous_Active_Stocks)
+
+    #Etpae 2 :
+    #Rebalancer le portefeuille
+    print("\n*** Parametres ***\n")
+    print(f"Date > {actual_Date} \nFenetre d'analyse > {fenetre_Analyse} jours \nPanier de {taille_panier} stocks\n")
+
+    compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, actual_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
+    #print(compo_Indice_Date_t)
+    #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
+    nb_J = Nb_Jours_De_Trade(dbConn, actual_Date, fenetre_Analyse) #nb_J est un integer 
+    #print(nb_J)
+    print("Nombre de jours de trade effectifs sur la fenetre d'analyse > ", nb_J,"\n\n")
+
+    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, actual_Date, fenetre_Analyse, nb_J)
+    #print(all_Close_Price)
+
+    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
+    #print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
+    #pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+    #print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
+
+    matrix_Y_Benchmark = Benchmark_Btw_2Dates(benchmark, actual_Date, fenetre_Analyse)
+    #print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
+
+
+    #Recupérer les 500 stocks (ou 474) de la matrice + le Y pour l'index 5
+    #On predit le y^ avec le model 
+    #On compare le Y et y^ (ex: MSE ou autre)
+
+    percentage_Test_Train = 0.4 #40%
+    X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
+
+    #CORRELATION
+    corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
+    #print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
+    #print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
+
+    #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
+    panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
+    print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
+            +f"*Pour un panier de taille > {taille_panier} \n")
+    #print(panier_Select_Corr_Stocks_Indice)
+    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+    print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
+
+    #On retourne la nouvelle composition du portefeuille (numeros des stocks) + les rendements lors de la precedente fenetre de rebalancement
+    return list_NumStocks, df_Rendements_LastPeriod
+
+
+def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark):
+    """Methode generale faisant tous les rebalancements sur une periode donnee"""
+    """
+    * dbConn = connexion a la base de donne MySQL
+    * start_Date = date du debut du rebalancement
+    * end_Date = date de fin du rebalancement
+    * frequence_rebalancement = nombre de jours entre chaque rebalancement
+    * taille_panier = taille du portefeuille
+    * fenetre_Analyse = taille de la fenêtre sur laquelle nous allons baser notre analyse pour rebalancer notre portfeuille (ne pas la prendre trop petite ou trop grande, 200 est bien)
+    * benchmark = recration de l'indice
+    """
+    list_Historical_Composition_Portfolio = [[-1]*taille_panier] #List de la composition du portefeuille pour chaque periode de rebalancement
+    #On initialise la liste à -1 pour pouvoir faire le 1e boucle du while
+    df_Historical_Yield_Portfolio = None #DataFrame contenant les rendement du portefeuille pour chaque jour sur toute la duree du rebalancement 
+
+    #On boucle sur nos rebalancement tant qu'on n'a pas atteint la date finale
+
+    start_Date = datetime.datetime.strptime(start_Date, '%Y-%m-%d') #Transformation en objet datetime
+    end_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d') #Transformation en objet datetime
+    
+    while(start_Date < end_Date):
+        str_Start_Date = start_Date.strftime('%Y-%m-%d')
+        new_Portfolio, pd_Last_Yield = Rebalancement_UnCycle(dbConn, list_Historical_Composition_Portfolio[-1], str_Start_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark)
+        #list_Historical_Composition_Portfolio[-1] sera le dernier element de la liste list_Historical_Composition_Portfolio (ici une sous-liste)
+        list_Historical_Composition_Portfolio.append(new_Portfolio)
+        df_Historical_Yield_Portfolio = pd.concat([df_Historical_Yield_Portfolio, pd_Last_Yield], ignore_index = True)
+
+        start_Date = start_Date + datetime.timedelta(days = frequence_rebalancement) 
+
+    del list_Historical_Composition_Portfolio[0] #Delete la sous-liste d'index 0 car initialisee a -1
+    return list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio
+
+#endregion
 
 #? MAIN
 if __name__=='__main__' :
@@ -327,7 +489,7 @@ if __name__=='__main__' :
     #! A adpater suivant vos ID / Psw / Ports de connexion / Nom de database
     dbConnection = mysql.connector.connect(host= "127.0.0.1", port="3306",
                                     user="root", password="root",
-                                    database="allDatas")
+                                    database="allDatas", use_pure=True)
 
     #Requette test
     #Requete_Test_SelectAll(dbConnection) 
@@ -344,7 +506,6 @@ if __name__=='__main__' :
     
     benchmark = Recreation_Indice(dbConnection)
     #print(benchmark)
-    
 
     #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
     nb_J = Nb_Jours_De_Trade(dbConnection, myDate_End, windowSize) #nb_J est un integer 
@@ -356,12 +517,12 @@ if __name__=='__main__' :
     #print(all_Close_Price)
 
     matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
-    print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
-    pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
-    print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
+    #print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
+    #pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+    #print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
 
     matrix_Y_Benchmark = Benchmark_Btw_2Dates(benchmark, myDate_End, windowSize)
-    print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
+    #print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
 
 
     #Recupérer les 500 stocks (ou 474) de la matrice + le Y pour l'index 5
@@ -397,10 +558,9 @@ if __name__=='__main__' :
 
     matrix_Yield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
     pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
-    print(matrix_Yield) 
+    print("\n*Matrice des rendements sur la période :\n", matrix_Yield) 
 
     """
-
     #TEST ADF
     ADF(Y_test, predictions)
     """
@@ -416,8 +576,39 @@ if __name__=='__main__' :
     panier_Approche1 = Approche1_Selection_stock_enFonction_rendementIndice(rendement_Indice, corr_stocks_indice, taille_panier)
     print(panier_Approche1)
 
-    dbConnection.close() #Fermeture du strem avec MySql
+    #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks
+    critere_Correlation_Stocks_Stocks = 0.6 #= 60%
+    panier_Select_Corr_Stocks_Stocks = Select_Corr_Stocks_Stocks(corr_stocks_stocks, critere_Correlation_Stocks_Stocks, taille_panier)
+    print("\n**Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks \n" 
+            +f"*Pour une correlation inferieure a > {critere_Correlation_Stocks_Stocks} \n"
+            +f"*Pour un panier de taille > {taille_panier} \n")
+    print(panier_Select_Corr_Stocks_Stocks)
+    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Stocks.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+    print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
+
+    #panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
+    panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
+    print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
+            +f"*Pour un panier de taille > {taille_panier} \n")
+    print(panier_Select_Corr_Stocks_Indice)
+    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+    print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
 
 
-#! A FAIRE :
-#* Finir l'approche 1 & 2
+
+    #! NON FINIE
+    #Rebalancement
+    date_debutRebalancement = "2019-01-01"
+    date_finRebalancement = "2019-01-31"
+    frequence_rebalancement = 7 #7 jours = Toutes les semaines
+    list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
+
+    #Plot des rendements de l'Indice sur la période
+    #Plot_Indice(matrix_Yield)
+
+    #print(df_Historical_Yield_Portfolio)
+    #plt.plot(df_Historical_Yield_Portfolio)
+    #plt.show()
+
+
+    dbConnection.close() #Fermeture du stream avec MySql
