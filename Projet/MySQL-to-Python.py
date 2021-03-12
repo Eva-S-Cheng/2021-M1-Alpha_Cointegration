@@ -351,13 +351,28 @@ def Select_Corr_Stocks_Indice(df, panier_size):
 
 #endregion
 
+def Rendement_Percent(df):
+    """Methode pour calculer le rendement en pourcentage et pouvoir le comparer """
+    #* df = Dataframe ayant 1 colonne
+    initial_Value = 100
+    for i in df.index:
+        df.loc[i] = initial_Value*(1 + (df.loc[i])/100)
+        initial_Value = df.loc[i]
+    return df
 
-def Plot_Indice_Stocks(df_rendements_Indice, df_rendements_Stocks):
+def Plot_Indice_Stocks(list_df, list_label_Df, fig_title):
     """Methode de plot des rendements de l'indice"""
+    """
+    *list_df = liste de toutes les dataframes a plot sur la meme figure
+    *lis_tabel_Df = nom (label) de chaque courbe. De MEME TAILLE que list_df
+    *fig_title = Titre de la figure et du plot
+    """
     fig, ax = plt.subplots(nrows=1, ncols=1)
-    fig.suptitle("Rendements de l'indice")
-    ax.plot(df_rendements_Indice)
-    ax.plot(df_rendements_Stocks)
+    fig.suptitle(fig_title)
+    for i in range(len(list_df)):
+        ax.plot(list_df[i], label = list_label_Df[i])
+    ax.grid(True)
+    ax.legend(loc='best')
     plt.show()
 
 
@@ -399,11 +414,26 @@ def Rebalancement_UnCycle(dbConn, previous_Active_Stocks, actual_Date, rebalanci
 
     #Etape 1 :
     # Recuperer le rendement moyen de chaque jour depuis le dernier rebalancement en fonction des stocks composant le panier actuellement (ces stocks n'ont pas encore ete changes)
-    df_Rendements_LastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, previous_Active_Stocks)
+    #Rendements du portefeuille
+    df_Rendements_portfolio_lastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, previous_Active_Stocks)
 
-    #Etpae 2 :
+    #Elements pour determiner les rendements de l'indice sur la meme periode
+    indice_previous_Date = datetime.datetime.strptime(actual_Date, '%Y-%m-%d')#transformation en type datetime
+    indice_previous_Date = indice_previous_Date - datetime.timedelta(days = rebalancing_size)#On se replace une semaine avant pour connaitre la composition de l'indice a ce moment la
+    indice_previous_Date = indice_previous_Date.strftime('%Y-%m-%d')#Convertion en string
+    #On determine la composition de l'indice au debut de la periode precedente
+    compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, indice_previous_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
+    list_compo_indice = []
+    list_compo_indice.extend(compo_Indice_Date_t.values[i,0] for i in range(len(compo_Indice_Date_t.values))) 
+    #On obtient une liste et non une dataframe (besoin d'une liste pour la methode > Rendement_List_Stocks() )
+
+    #Rendements de l'indice
+    df_Rendements_indice_lastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, list_compo_indice)
+
+
+    #Etape 2 :
     #Rebalancer le portefeuille
-    print("\n*** Parametres ***\n")
+    print("\n\n*** Parametres ***\n")
     print(f"Date > {actual_Date} \nFenetre d'analyse > {fenetre_Analyse} jours \nPanier de {taille_panier} stocks")
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, actual_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
@@ -443,10 +473,10 @@ def Rebalancement_UnCycle(dbConn, previous_Active_Stocks, actual_Date, rebalanci
             +f"*Pour un panier de taille > {taille_panier} \n")
     #print(panier_Select_Corr_Stocks_Indice)
     list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
-    print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
+    print("*Ce qui donne la liste de stocks :\n", list_NumStocks)
 
     #On retourne la nouvelle composition du portefeuille (numeros des stocks) + les rendements lors de la precedente fenetre de rebalancement
-    return list_NumStocks, df_Rendements_LastPeriod
+    return list_NumStocks, df_Rendements_portfolio_lastPeriod, df_Rendements_indice_lastPeriod
 
 
 def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark):
@@ -463,6 +493,8 @@ def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_
     list_Historical_Composition_Portfolio = [[-1]*taille_panier] #List de la composition du portefeuille pour chaque periode de rebalancement
     #On initialise la liste à -1 pour pouvoir faire le 1e boucle du while
     df_Historical_Yield_Portfolio = None #DataFrame contenant les rendement du portefeuille pour chaque jour sur toute la duree du rebalancement 
+    df_Historical_Yield_Indice = None #DataFrame contenant les rendement de l'indice pour chaque jour sur toute la duree du rebalancement 
+
 
     #On boucle sur nos rebalancement tant qu'on n'a pas atteint la date finale
 
@@ -471,20 +503,24 @@ def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_
     
     while(start_Date < end_Date):
         str_Start_Date = start_Date.strftime('%Y-%m-%d')
-        new_Portfolio, pd_Last_Yield = Rebalancement_UnCycle(dbConn, list_Historical_Composition_Portfolio[-1], str_Start_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark)
+        new_Portfolio, pd_Last_Yield_portfolio, pd_Last_Yield_indice  = Rebalancement_UnCycle(dbConn, list_Historical_Composition_Portfolio[-1], str_Start_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark)
         #list_Historical_Composition_Portfolio[-1] sera le dernier element de la liste list_Historical_Composition_Portfolio (ici une sous-liste)
         list_Historical_Composition_Portfolio.append(new_Portfolio)
-        #print(f"\n## pd_Last_Yield > \n {pd_Last_Yield}")
+        #print(f"\n## pd_Last_Yield_portfolio > \n {pd_Last_Yield_portfolio}")
         #print(f"\n## df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
-        df_Historical_Yield_Portfolio = pd.concat([df_Historical_Yield_Portfolio, pd_Last_Yield], ignore_index = True)
+        df_Historical_Yield_Portfolio = pd.concat([df_Historical_Yield_Portfolio, pd_Last_Yield_portfolio], ignore_index = True)
         #print(f"\n## NEW df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
+        if(len(df_Historical_Yield_Portfolio.values) != 0):
+            #Sinon on a un decalage d'une periode car a la premiere iteration df_Historical_Yield_Portfolio est toujours vide
+            df_Historical_Yield_Indice = pd.concat([df_Historical_Yield_Indice, pd_Last_Yield_indice], ignore_index = True)
 
         start_Date = start_Date + datetime.timedelta(days = frequence_rebalancement) 
 
     del list_Historical_Composition_Portfolio[0] #Delete la sous-liste d'index 0 car initialisee a -1
-    return list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio
+    return list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Historical_Yield_Indice
 
 #endregion
+
 
 #? MAIN
 if __name__=='__main__' :
@@ -497,8 +533,9 @@ if __name__=='__main__' :
     #Requette test
     #Requete_Test_SelectAll(dbConnection) 
 
+    """
     myDate_End = "2019-01-21"
-    windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    windowSize = 200 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
     taille_panier = 30 #Taille du panier de stocks
 
     print("\n*** Parametres ***\n")
@@ -535,6 +572,7 @@ if __name__=='__main__' :
     percentage_Test_Train = 0.4 #40%
     X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
 
+    """
     #We fit our model
     """
     ourModel = Fit_Model(X_train, Y_train)
@@ -557,62 +595,76 @@ if __name__=='__main__' :
             "\t-Soit il y a un problème dans le modèle ou l'approche\n")
 
     """
+    """
     
 
     matrix_MeanYield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
     pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
-    print("\n*Matrice des rendements sur la période :\n", matrix_MeanYield) 
+    #print("\n*Matrice des rendements sur la période :\n", matrix_MeanYield) 
 
-    """
+    
     #TEST ADF
-    ADF(Y_test, predictions)
-    """
+    #ADF(Y_test, predictions)
+    
 
     #CORRELATION
     corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
-    print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
-    print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
+    #print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
+    #print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
 
     rendement_Indice = Rendements_Indice(dbConnection, myDate_End, windowSize)
-    print("\n*Rendement de l'indice", rendement_Indice,"%\n")
+    #print("\n*Rendement de l'indice", rendement_Indice,"%\n")
     
     panier_Approche1 = Approche1_Selection_stock_enFonction_rendementIndice(rendement_Indice, corr_stocks_indice, taille_panier)
-    print(panier_Approche1)
+    #print(panier_Approche1)
 
     #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks
     critere_Correlation_Stocks_Stocks = 0.6 #= 60%
     panier_Select_Corr_Stocks_Stocks = Select_Corr_Stocks_Stocks(corr_stocks_stocks, critere_Correlation_Stocks_Stocks, taille_panier)
+    
     print("\n**Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks \n" 
             +f"*Pour une correlation inferieure a > {critere_Correlation_Stocks_Stocks} \n"
             +f"*Pour un panier de taille > {taille_panier} \n")
-    print(panier_Select_Corr_Stocks_Stocks)
+    
+    #print(panier_Select_Corr_Stocks_Stocks)
     list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Stocks.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
-    print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
+    #print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
 
     #panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
     panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
-    print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
-            +f"*Pour un panier de taille > {taille_panier} \n")
-    print(panier_Select_Corr_Stocks_Indice)
+    #print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
+    #        +f"*Pour un panier de taille > {taille_panier} \n")
+    #print(panier_Select_Corr_Stocks_Indice)
     list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
-    print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
+    #print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
 
+    """
 
-
-    #! NON FINIE
-    #Rebalancement
+    #region Rebalancement
     date_debutRebalancement = "2019-01-01"
     date_finRebalancement = "2019-01-31"
     frequence_rebalancement = 7 #7 jours = Toutes les semaines
-    list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
+    windowSize = 50 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    taille_panier = 30 #Taille du panier de stocks
+
+    benchmark = Recreation_Indice(dbConnection)
+    #print(benchmark)
+
+    #Rebalancement du portefeuille entre la date de debut et de fin
+    list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Rendements_indice_lastPeriod = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
+
+    #Recuperation des rendements de l'indice et du portfolio 
+    #matrix_MeanYield = Select_Rendement(dbConnection, date_finRebalancement, windowSize, nb_J, compo_Indice_Date_t)
+    #matrix_MeanYield = Rendement_Percent(matrix_MeanYield)
+    df_Rendements_indice_lastPeriod = Rendement_Percent(df_Rendements_indice_lastPeriod)
+    df_Historical_Yield_Portfolio = Rendement_Percent(df_Historical_Yield_Portfolio)
+    #print(df_Rendements_indice_lastPeriod)
+    #print(df_Historical_Yield_Portfolio)
 
     #Plot des rendements de l'Indice sur la période
-    Plot_Indice_Stocks(matrix_MeanYield, df_Historical_Yield_Portfolio)
+    #Plot_Indice_Stocks([matrix_MeanYield, df_Historical_Yield_Portfolio], ["Indice","Portfolio"], "Replication de l'indice")
+    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod, df_Historical_Yield_Portfolio], ["Indice","Portfolio"], "Replication de l'indice")
 
-    #print(df_Historical_Yield_Portfolio)
-    #plt.plot(df_Historical_Yield_Portfolio)
-    #plt.show()
-
-    
+    #endregion
 
     dbConnection.close() #Fermeture du stream avec MySql
