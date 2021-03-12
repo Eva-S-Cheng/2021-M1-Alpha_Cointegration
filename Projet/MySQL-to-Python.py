@@ -250,9 +250,9 @@ def Select_Rendement(dbConn, end_Date, window_days, nb_TradeDays, compo_Indice_D
     #print(column_Names)
 
     #On renomme les colonne de notre matrice avec uniquement les stocks ayant toutes les datas
-    final_Df_All_Yield = pd.DataFrame(matrix_All_Yields, columns=column_Names)
-    
-    return final_Df_All_Yield
+    df_All_Yield = pd.DataFrame(matrix_All_Yields, columns=column_Names)
+    mean_df_All_Yield = df_All_Yield.mean(axis = 1) #Moyenne des rendements du jour sur les lignes
+    return mean_df_All_Yield
 
 
 
@@ -352,12 +352,12 @@ def Select_Corr_Stocks_Indice(df, panier_size):
 #endregion
 
 
-def Plot_Indice(df_rendements):
+def Plot_Indice_Stocks(df_rendements_Indice, df_rendements_Stocks):
     """Methode de plot des rendements de l'indice"""
-    df_mean_rendements = df_rendements.mean(axis = 1) #Moyenne des rendements du jour sur les lignes
-    fig = plt.figure()
+    fig, ax = plt.subplots(nrows=1, ncols=1)
     fig.suptitle("Rendements de l'indice")
-    plt.plot(df_mean_rendements)
+    ax.plot(df_rendements_Indice)
+    ax.plot(df_rendements_Stocks)
     plt.show()
 
 
@@ -404,7 +404,7 @@ def Rebalancement_UnCycle(dbConn, previous_Active_Stocks, actual_Date, rebalanci
     #Etpae 2 :
     #Rebalancer le portefeuille
     print("\n*** Parametres ***\n")
-    print(f"Date > {actual_Date} \nFenetre d'analyse > {fenetre_Analyse} jours \nPanier de {taille_panier} stocks\n")
+    print(f"Date > {actual_Date} \nFenetre d'analyse > {fenetre_Analyse} jours \nPanier de {taille_panier} stocks")
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, actual_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
     #print(compo_Indice_Date_t)
@@ -474,7 +474,10 @@ def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_
         new_Portfolio, pd_Last_Yield = Rebalancement_UnCycle(dbConn, list_Historical_Composition_Portfolio[-1], str_Start_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark)
         #list_Historical_Composition_Portfolio[-1] sera le dernier element de la liste list_Historical_Composition_Portfolio (ici une sous-liste)
         list_Historical_Composition_Portfolio.append(new_Portfolio)
+        #print(f"\n## pd_Last_Yield > \n {pd_Last_Yield}")
+        #print(f"\n## df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
         df_Historical_Yield_Portfolio = pd.concat([df_Historical_Yield_Portfolio, pd_Last_Yield], ignore_index = True)
+        #print(f"\n## NEW df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
 
         start_Date = start_Date + datetime.timedelta(days = frequence_rebalancement) 
 
@@ -499,7 +502,7 @@ if __name__=='__main__' :
     taille_panier = 30 #Taille du panier de stocks
 
     print("\n*** Parametres ***\n")
-    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours","\nPanier de ",taille_panier," stocks\n")
+    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours","\nPanier de ",taille_panier," stocks")
 
     compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
     #print(compo_Indice_Date_t)
@@ -556,9 +559,9 @@ if __name__=='__main__' :
     """
     
 
-    matrix_Yield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
+    matrix_MeanYield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
     pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
-    print("\n*Matrice des rendements sur la période :\n", matrix_Yield) 
+    print("\n*Matrice des rendements sur la période :\n", matrix_MeanYield) 
 
     """
     #TEST ADF
@@ -604,11 +607,12 @@ if __name__=='__main__' :
     list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
 
     #Plot des rendements de l'Indice sur la période
-    #Plot_Indice(matrix_Yield)
+    Plot_Indice_Stocks(matrix_MeanYield, df_Historical_Yield_Portfolio)
 
     #print(df_Historical_Yield_Portfolio)
     #plt.plot(df_Historical_Yield_Portfolio)
     #plt.show()
 
+    
 
     dbConnection.close() #Fermeture du stream avec MySql
