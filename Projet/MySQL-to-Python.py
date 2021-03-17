@@ -19,7 +19,7 @@ from statsmodels.tsa.stattools import adfuller
 from sklearn.linear_model import LinearRegression 
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error #metrics pr MSE, R², MAE
 from sklearn.model_selection import train_test_split
-from regressors import stats
+#from regressors import stats
 
 import seaborn as sb #Pour la correlation
 #endregion
@@ -184,8 +184,8 @@ def Print_Results(model, X_test, Y_test, Pred):
     MAE_model = mean_absolute_error(Y_test['log(AVG(close_Value))'], Pred)
     print("$ MAE = ", MAE_model)
 
-    list_p_value = stats.coef_pval(model, X_train, Y_train['log(AVG(close_Value))'])
-    print("\n* p_values > \n", list_p_value)
+    #list_p_value = stats.coef_pval(model, X_train, Y_train['log(AVG(close_Value))'])
+    #print("\n* p_values > \n", list_p_value)
     #print("\n\n",list_p_value[0])
 
 
@@ -521,130 +521,145 @@ def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_
 
 #endregion
 
+def InfoRatio(Portfolio,Benchmark):
+   
+    data = Portfolio["AVG(rendement)"]-Benchmark["AVG(rendement)"]
+    moy = data.mean()
+    vol = data.std()
+    
+    return moy/vol
 
+def LongShort(benchmark,alpha):
+    
+    df_plus, df_minus = None, None
+    df_plus = benchmark + alpha/252
+    df_minus = benchmark - alpha/252
+    
+    return df_plus, df_minus
+    
 #? MAIN
 if __name__=='__main__' :
 
     #! A adpater suivant vos ID / Psw / Ports de connexion / Nom de database
     dbConnection = mysql.connector.connect(host= "127.0.0.1", port="3306",
-                                    user="root", password="root",
+                                    user="root", password="N8L10UST",
                                     database="allDatas", use_pure=True)
 
     #Requette test
     #Requete_Test_SelectAll(dbConnection) 
 
-    """
-    myDate_End = "2019-01-21"
-    windowSize = 200 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
-    taille_panier = 30 #Taille du panier de stocks
-
-    print("\n*** Parametres ***\n")
-    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours","\nPanier de ",taille_panier," stocks")
-
-    compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
-    #print(compo_Indice_Date_t)
     
-    benchmark = Recreation_Indice(dbConnection)
-    #print(benchmark)
+#    myDate_End = "2019-01-21"
+#    windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+#    taille_panier = 30 #Taille du panier de stocks
+#
+#    print("\n*** Parametres ***\n")
+#    print("Date > ", myDate_End,"\nFenetre de > ", windowSize," jours","\nPanier de ",taille_panier," stocks")
+#
+#    compo_Indice_Date_t = Composition_Indice_Date_t(dbConnection, myDate_End) #Composition de l'indice à une date donnée (Environ 500 stocks)
+#    #print(compo_Indice_Date_t)
+#    
+#    benchmark = Recreation_Indice(dbConnection)
+#    #print(benchmark)
+#
+#    #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
+#    nb_J = Nb_Jours_De_Trade(dbConnection, myDate_End, windowSize) #nb_J est un integer 
+#    #print(nb_J)
+#    print("Nombre de jours de trade effectifs > ", nb_J,"\n\n")
+#    
+#
+#    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConnection, myDate_End, windowSize, nb_J)
+#    #print(all_Close_Price)
+#
+#    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
+#    #print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
+#    #pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+#    #print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
+#
+#    matrix_Y_Benchmark = Benchmark_Btw_2Dates(benchmark, myDate_End, windowSize)
+#    #print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
+#
+#
+#    #Recupérer les 500 stocks (ou 474) de la matrice + le Y pour l'index 5
+#    #On predit le y^ avec le model 
+#    #On compare le Y et y^ (ex: MSE ou autre)
+#
+#    percentage_Test_Train = 0.4 #40%
+#    X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
+#
+#    
+#    #We fit our model
+#    
+#    ourModel = Fit_Model(X_train, Y_train)
+#    #Make predictions
+#    #predictions = ourModel.predict(X_train)
+#    predictions = ourModel.predict(X_test)
+#
+#    #Affichage des resultats
+#    #Print_Results(ourModel, X_train, Y_train, predictions)
+#    Print_Results(ourModel, X_test, Y_test, predictions)
+#
+#
+#    print("\n$$ ANALYSE >\n")
+#    print("* Le MSE est très proche de 0\n",
+#            "* Le R-squared error est très proche de 1\n",
+#            "* Le MAE Mean Absolute Error est très proche de 0\n",
+#            "** ==> Bon modèle\n")
+#    print("\n/!\ > Tous les p-values sont < 0.05\n",
+#            "\t-Soit tous les stocks sont significatifs (ou alors leurs log(Price))\n",
+#            "\t-Soit il y a un problème dans le modèle ou l'approche\n")
+#
+#    
+#    
+#    
+#
+#    matrix_MeanYield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
+#    pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+#    #print("\n*Matrice des rendements sur la période :\n", matrix_MeanYield) 
+#
+#    
+#    #TEST ADF
+#    #ADF(Y_test, predictions)
+#    
+#
+#    #CORRELATION
+#    corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
+#    #print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
+#    #print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
+#
+#    rendement_Indice = Rendements_Indice(dbConnection, myDate_End, windowSize)
+#    #print("\n*Rendement de l'indice", rendement_Indice,"%\n")
+#    
+#    panier_Approche1 = Approche1_Selection_stock_enFonction_rendementIndice(rendement_Indice, corr_stocks_indice, taille_panier)
+#    #print(panier_Approche1)
+#
+#    #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks
+#    critere_Correlation_Stocks_Stocks = 0.6 #= 60%
+#    panier_Select_Corr_Stocks_Stocks = Select_Corr_Stocks_Stocks(corr_stocks_stocks, critere_Correlation_Stocks_Stocks, taille_panier)
+#    
+#    print("\n**Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks \n" 
+#            +f"*Pour une correlation inferieure a > {critere_Correlation_Stocks_Stocks} \n"
+#            +f"*Pour un panier de taille > {taille_panier} \n")
+#    
+#    #print(panier_Select_Corr_Stocks_Stocks)
+#    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Stocks.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+#    #print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
+#
+#    #panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
+#    panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
+#    #print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
+#    #        +f"*Pour un panier de taille > {taille_panier} \n")
+#    #print(panier_Select_Corr_Stocks_Indice)
+#    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+#    #print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
 
-    #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
-    nb_J = Nb_Jours_De_Trade(dbConnection, myDate_End, windowSize) #nb_J est un integer 
-    #print(nb_J)
-    print("Nombre de jours de trade effectifs > ", nb_J,"\n\n")
     
-
-    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConnection, myDate_End, windowSize, nb_J)
-    #print(all_Close_Price)
-
-    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
-    #print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
-    #pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
-    #print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
-
-    matrix_Y_Benchmark = Benchmark_Btw_2Dates(benchmark, myDate_End, windowSize)
-    #print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
-
-
-    #Recupérer les 500 stocks (ou 474) de la matrice + le Y pour l'index 5
-    #On predit le y^ avec le model 
-    #On compare le Y et y^ (ex: MSE ou autre)
-
-    percentage_Test_Train = 0.4 #40%
-    X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
-
-    """
-    #We fit our model
-    """
-    ourModel = Fit_Model(X_train, Y_train)
-    #Make predictions
-    #predictions = ourModel.predict(X_train)
-    predictions = ourModel.predict(X_test)
-
-    #Affichage des resultats
-    #Print_Results(ourModel, X_train, Y_train, predictions)
-    Print_Results(ourModel, X_test, Y_test, predictions)
-
-
-    print("\n$$ ANALYSE >\n")
-    print("* Le MSE est très proche de 0\n",
-            "* Le R-squared error est très proche de 1\n",
-            "* Le MAE Mean Absolute Error est très proche de 0\n",
-            "** ==> Bon modèle\n")
-    print("\n/!\ > Tous les p-values sont < 0.05\n",
-            "\t-Soit tous les stocks sont significatifs (ou alors leurs log(Price))\n",
-            "\t-Soit il y a un problème dans le modèle ou l'approche\n")
-
-    """
-    """
-    
-
-    matrix_MeanYield = Select_Rendement(dbConnection, myDate_End, windowSize, nb_J, compo_Indice_Date_t)
-    pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
-    #print("\n*Matrice des rendements sur la période :\n", matrix_MeanYield) 
-
-    
-    #TEST ADF
-    #ADF(Y_test, predictions)
-    
-
-    #CORRELATION
-    corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
-    #print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
-    #print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
-
-    rendement_Indice = Rendements_Indice(dbConnection, myDate_End, windowSize)
-    #print("\n*Rendement de l'indice", rendement_Indice,"%\n")
-    
-    panier_Approche1 = Approche1_Selection_stock_enFonction_rendementIndice(rendement_Indice, corr_stocks_indice, taille_panier)
-    #print(panier_Approche1)
-
-    #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks
-    critere_Correlation_Stocks_Stocks = 0.6 #= 60%
-    panier_Select_Corr_Stocks_Stocks = Select_Corr_Stocks_Stocks(corr_stocks_stocks, critere_Correlation_Stocks_Stocks, taille_panier)
-    
-    print("\n**Panier construit a partir d'une selection basee sur la correlation Stocks Vs Stocks \n" 
-            +f"*Pour une correlation inferieure a > {critere_Correlation_Stocks_Stocks} \n"
-            +f"*Pour un panier de taille > {taille_panier} \n")
-    
-    #print(panier_Select_Corr_Stocks_Stocks)
-    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Stocks.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
-    #print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
-
-    #panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
-    panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
-    #print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
-    #        +f"*Pour un panier de taille > {taille_panier} \n")
-    #print(panier_Select_Corr_Stocks_Indice)
-    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
-    #print("\n*Ce qui donne la liste de stocks :\n", list_NumStocks)
-
-    """
 
     #region Rebalancement
     date_debutRebalancement = "2019-01-01"
     date_finRebalancement = "2019-01-31"
     frequence_rebalancement = 7 #7 jours = Toutes les semaines
-    windowSize = 50 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
+    windowSize = 20 #Nombre de jours sur le calendrier (compte les weekends et jours feriés)
     taille_panier = 30 #Taille du panier de stocks
 
     benchmark = Recreation_Indice(dbConnection)
@@ -652,7 +667,10 @@ if __name__=='__main__' :
 
     #Rebalancement du portefeuille entre la date de debut et de fin
     list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Rendements_indice_lastPeriod = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
-
+    print("\nInformation Ratio : " + str(InfoRatio(df_Historical_Yield_Portfolio,df_Rendements_indice_lastPeriod)) + "\n")
+    
+    df_plus, df_minus = LongShort(df_Rendements_indice_lastPeriod, 0.05)
+    
     #Recuperation des rendements de l'indice et du portfolio 
     #matrix_MeanYield = Select_Rendement(dbConnection, date_finRebalancement, windowSize, nb_J, compo_Indice_Date_t)
     #matrix_MeanYield = Rendement_Percent(matrix_MeanYield)
@@ -660,6 +678,11 @@ if __name__=='__main__' :
     df_Historical_Yield_Portfolio = Rendement_Percent(df_Historical_Yield_Portfolio)
     #print(df_Rendements_indice_lastPeriod)
     #print(df_Historical_Yield_Portfolio)
+
+    df_plus = Rendement_Percent(df_plus)
+    df_minus = Rendement_Percent(df_minus)
+
+    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod, df_plus, df_minus], ["Indice","Plus", "Minus"], "Long-Short")
 
     #Plot des rendements de l'Indice sur la période
     #Plot_Indice_Stocks([matrix_MeanYield, df_Historical_Yield_Portfolio], ["Indice","Portfolio"], "Replication de l'indice")
