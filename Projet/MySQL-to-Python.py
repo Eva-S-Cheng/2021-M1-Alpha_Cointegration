@@ -396,6 +396,46 @@ def Rendement_List_Stocks(dbConn, end_Date, window_days, list_Stocks):
 
     return frame #Moyenne des rendements
 
+def Rendement_List_Stocks_Plus(dbConn, end_Date, window_days, list_Stocks,alpha):
+    """Methode retournant la moyenne des rendements d'une liste de stocks entre 2 dates"""
+    
+    #Creation de start_Date qui est end_Date - Window_Days
+    start_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d')
+    start_Date = start_Date - datetime.timedelta(days = window_days)
+    start_Date = start_Date.strftime('%Y-%m-%d')
+
+    #Jointure des valeurs de list_Stocks en 1 string unique
+    for i in range(len(list_Stocks)):
+        list_Stocks[i] = str(list_Stocks[i])    
+    str_List_Stocks = ','.join(list_Stocks)
+
+    ref = tuple((start_Date, end_Date, str_List_Stocks))
+
+    frame = pd.read_sql("SELECT AVG(rendement) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (%s) GROUP BY datas.trade_Date ;", dbConn, params=ref)
+    pd.set_option('display.expand_frame_repr', False)
+    frame['AVG(rendement)']=frame['AVG(rendement)']+alpha/252
+    return frame #Moyenne des rendements
+
+def Rendement_List_Stocks_Minus(dbConn, end_Date, window_days, list_Stocks,alpha):
+    """Methode retournant la moyenne des rendements d'une liste de stocks entre 2 dates"""
+    
+    #Creation de start_Date qui est end_Date - Window_Days
+    start_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d')
+    start_Date = start_Date - datetime.timedelta(days = window_days)
+    start_Date = start_Date.strftime('%Y-%m-%d')
+
+    #Jointure des valeurs de list_Stocks en 1 string unique
+    for i in range(len(list_Stocks)):
+        list_Stocks[i] = str(list_Stocks[i])    
+    str_List_Stocks = ','.join(list_Stocks)
+
+    ref = tuple((start_Date, end_Date, str_List_Stocks))
+
+    frame = pd.read_sql("SELECT AVG(rendement) FROM datas WHERE (trade_Date BETWEEN %s AND %s) AND datas.num_Stock IN (%s) GROUP BY datas.trade_Date ;", dbConn, params=ref)
+    pd.set_option('display.expand_frame_repr', False)
+    frame['AVG(rendement)']=frame['AVG(rendement)']-alpha/252
+    return frame #Moyenne des rendements
+
 
 #region Section Rebalancement
 
@@ -416,6 +456,162 @@ def Rebalancement_UnCycle(dbConn, previous_Active_Stocks, actual_Date, rebalanci
     # Recuperer le rendement moyen de chaque jour depuis le dernier rebalancement en fonction des stocks composant le panier actuellement (ces stocks n'ont pas encore ete changes)
     #Rendements du portefeuille
     df_Rendements_portfolio_lastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, previous_Active_Stocks)
+
+    #Elements pour determiner les rendements de l'indice sur la meme periode
+    indice_previous_Date = datetime.datetime.strptime(actual_Date, '%Y-%m-%d')#transformation en type datetime
+    indice_previous_Date = indice_previous_Date - datetime.timedelta(days = rebalancing_size)#On se replace une semaine avant pour connaitre la composition de l'indice a ce moment la
+    indice_previous_Date = indice_previous_Date.strftime('%Y-%m-%d')#Convertion en string
+    #On determine la composition de l'indice au debut de la periode precedente
+    compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, indice_previous_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
+    list_compo_indice = []
+    list_compo_indice.extend(compo_Indice_Date_t.values[i,0] for i in range(len(compo_Indice_Date_t.values))) 
+    #On obtient une liste et non une dataframe (besoin d'une liste pour la methode > Rendement_List_Stocks() )
+
+    #Rendements de l'indice
+    df_Rendements_indice_lastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, list_compo_indice)
+
+
+    #Etape 2 :
+    #Rebalancer le portefeuille
+    print("\n\n*** Parametres ***\n")
+    print(f"Date > {actual_Date} \nFenetre d'analyse > {fenetre_Analyse} jours \nPanier de {taille_panier} stocks")
+
+    compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, actual_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
+    #print(compo_Indice_Date_t)
+    #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
+    nb_J = Nb_Jours_De_Trade(dbConn, actual_Date, fenetre_Analyse) #nb_J est un integer 
+    #print(nb_J)
+    print("Nombre de jours de trade effectifs sur la fenetre d'analyse > ", nb_J,"\n\n")
+
+    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, actual_Date, fenetre_Analyse, nb_J)
+    #print(all_Close_Price)
+
+    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
+    #print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
+    #pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+    #print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
+
+    matrix_Y_Benchmark = Benchmark_Btw_2Dates(benchmark, actual_Date, fenetre_Analyse)
+    #print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
+
+
+    #Recupérer les 500 stocks (ou 474) de la matrice + le Y pour l'index 5
+    #On predit le y^ avec le model 
+    #On compare le Y et y^ (ex: MSE ou autre)
+
+    percentage_Test_Train = 0.4 #40%
+    X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
+
+    #CORRELATION
+    corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
+    #print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
+    #print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
+
+    #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
+    panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
+    print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
+            +f"*Pour un panier de taille > {taille_panier} \n")
+    #print(panier_Select_Corr_Stocks_Indice)
+    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+    print("*Ce qui donne la liste de stocks :\n", list_NumStocks)
+
+    #On retourne la nouvelle composition du portefeuille (numeros des stocks) + les rendements lors de la precedente fenetre de rebalancement
+    return list_NumStocks, df_Rendements_portfolio_lastPeriod, df_Rendements_indice_lastPeriod
+
+def Rebalancement_UnCycle_Plus(dbConn, previous_Active_Stocks, actual_Date, rebalancing_size, taille_panier, fenetre_Analyse, benchmark, alpha):
+    """Methode faisant un unique rebalancement et renvoyant la nouvelle liste des stocks"""
+    """
+    * dbConn = connexion a la base de donne MySQL
+    * previous_Active_Stocks = Liste des stocks actuellement dans le portefeuille et devant être changés
+    * actual_Date = date actuelle lors du rebalancement
+    * rebalancing_size = nombre de jours entre chaque rebalancement = Frequence de rebalancement
+    * taille_panier = taille du portefeuille
+    * fenetre_Analyse = taille de la fenêtre sur laquelle nous allons baser notre analyse pour rebalancer notre portfeuille (ne pas la prendre trop petite ou trop grande, 200 est bien)
+    * benchmark = recration de l'indice
+    """
+
+    #Etape 1 :
+    # Recuperer le rendement moyen de chaque jour depuis le dernier rebalancement en fonction des stocks composant le panier actuellement (ces stocks n'ont pas encore ete changes)
+    #Rendements du portefeuille
+    df_Rendements_portfolio_lastPeriod = Rendement_List_Stocks_Plus(dbConn, actual_Date, rebalancing_size, previous_Active_Stocks, alpha)
+
+    #Elements pour determiner les rendements de l'indice sur la meme periode
+    indice_previous_Date = datetime.datetime.strptime(actual_Date, '%Y-%m-%d')#transformation en type datetime
+    indice_previous_Date = indice_previous_Date - datetime.timedelta(days = rebalancing_size)#On se replace une semaine avant pour connaitre la composition de l'indice a ce moment la
+    indice_previous_Date = indice_previous_Date.strftime('%Y-%m-%d')#Convertion en string
+    #On determine la composition de l'indice au debut de la periode precedente
+    compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, indice_previous_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
+    list_compo_indice = []
+    list_compo_indice.extend(compo_Indice_Date_t.values[i,0] for i in range(len(compo_Indice_Date_t.values))) 
+    #On obtient une liste et non une dataframe (besoin d'une liste pour la methode > Rendement_List_Stocks() )
+
+    #Rendements de l'indice
+    df_Rendements_indice_lastPeriod = Rendement_List_Stocks(dbConn, actual_Date, rebalancing_size, list_compo_indice)
+
+
+    #Etape 2 :
+    #Rebalancer le portefeuille
+    print("\n\n*** Parametres ***\n")
+    print(f"Date > {actual_Date} \nFenetre d'analyse > {fenetre_Analyse} jours \nPanier de {taille_panier} stocks")
+
+    compo_Indice_Date_t = Composition_Indice_Date_t(dbConn, actual_Date) #Composition de l'indice à une date donnée (Environ 500 stocks)
+    #print(compo_Indice_Date_t)
+    #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
+    nb_J = Nb_Jours_De_Trade(dbConn, actual_Date, fenetre_Analyse) #nb_J est un integer 
+    #print(nb_J)
+    print("Nombre de jours de trade effectifs sur la fenetre d'analyse > ", nb_J,"\n\n")
+
+    all_Close_Price = Extract_LogClosePrice_Stocks_Btw_2Dates(dbConn, actual_Date, fenetre_Analyse, nb_J)
+    #print(all_Close_Price)
+
+    matrix_X_ClosePrice = Create_Df_ClosePrice(all_Close_Price, compo_Indice_Date_t, nb_J)
+    #print("\ncompo_Indice_Date_t > \n", compo_Indice_Date_t)
+    #pd.set_option('display.max_columns', 10) #Pour n'afficher que 6 colonnes (index compris)
+    #print("\nMatrice des Close prices > \n", matrix_X_ClosePrice)
+
+    matrix_Y_Benchmark = Benchmark_Btw_2Dates(benchmark, actual_Date, fenetre_Analyse)
+    #print("\nMatrice du Benchmark sur la periode > \n", matrix_Y_Benchmark)
+
+
+    #Recupérer les 500 stocks (ou 474) de la matrice + le Y pour l'index 5
+    #On predit le y^ avec le model 
+    #On compare le Y et y^ (ex: MSE ou autre)
+
+    percentage_Test_Train = 0.4 #40%
+    X_train, X_test, Y_train, Y_test = Split_Df_Train_Test(matrix_X_ClosePrice, matrix_Y_Benchmark, percentage_Test_Train)
+
+    #CORRELATION
+    corr_stocks_indice, corr_stocks_stocks = Correlation_Matrix(X_train, Y_train)
+    #print("\n* Correlation Stocks Vs Indice\n", corr_stocks_indice)
+    #print("\n\n* Correlation Stocks Vs Stocks\n", corr_stocks_stocks)
+
+    #Panier construit a partir d'une selection basee sur la correlation Stocks Vs Indice
+    panier_Select_Corr_Stocks_Indice = Select_Corr_Stocks_Indice(corr_stocks_indice, taille_panier)
+    print("\n**Panier construit a partir d'une selection basee sur les plus fortes correlations positives Stocks Vs Indice \n"
+            +f"*Pour un panier de taille > {taille_panier} \n")
+    #print(panier_Select_Corr_Stocks_Indice)
+    list_NumStocks = sorted(list(panier_Select_Corr_Stocks_Indice.index.values)) #Liste triee uniquement des numeros des stocks composant le panier
+    print("*Ce qui donne la liste de stocks :\n", list_NumStocks)
+
+    #On retourne la nouvelle composition du portefeuille (numeros des stocks) + les rendements lors de la precedente fenetre de rebalancement
+    return list_NumStocks, df_Rendements_portfolio_lastPeriod, df_Rendements_indice_lastPeriod
+
+def Rebalancement_UnCycle_Minus(dbConn, previous_Active_Stocks, actual_Date, rebalancing_size, taille_panier, fenetre_Analyse, benchmark, alpha):
+    """Methode faisant un unique rebalancement et renvoyant la nouvelle liste des stocks"""
+    """
+    * dbConn = connexion a la base de donne MySQL
+    * previous_Active_Stocks = Liste des stocks actuellement dans le portefeuille et devant être changés
+    * actual_Date = date actuelle lors du rebalancement
+    * rebalancing_size = nombre de jours entre chaque rebalancement = Frequence de rebalancement
+    * taille_panier = taille du portefeuille
+    * fenetre_Analyse = taille de la fenêtre sur laquelle nous allons baser notre analyse pour rebalancer notre portfeuille (ne pas la prendre trop petite ou trop grande, 200 est bien)
+    * benchmark = recration de l'indice
+    """
+
+    #Etape 1 :
+    # Recuperer le rendement moyen de chaque jour depuis le dernier rebalancement en fonction des stocks composant le panier actuellement (ces stocks n'ont pas encore ete changes)
+    #Rendements du portefeuille
+    df_Rendements_portfolio_lastPeriod = Rendement_List_Stocks_Minus(dbConn, actual_Date, rebalancing_size, previous_Active_Stocks, alpha)
 
     #Elements pour determiner les rendements de l'indice sur la meme periode
     indice_previous_Date = datetime.datetime.strptime(actual_Date, '%Y-%m-%d')#transformation en type datetime
@@ -519,6 +715,86 @@ def Rebalancement(dbConn, start_Date, end_Date, frequence_rebalancement, taille_
     del list_Historical_Composition_Portfolio[0] #Delete la sous-liste d'index 0 car initialisee a -1
     return list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Historical_Yield_Indice
 
+
+def Rebalancement_Plus(dbConn, start_Date, end_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark, alpha):
+    """Methode generale faisant tous les rebalancements sur une periode donnee"""
+    """
+    * dbConn = connexion a la base de donne MySQL
+    * start_Date = date du debut du rebalancement
+    * end_Date = date de fin du rebalancement
+    * frequence_rebalancement = nombre de jours entre chaque rebalancement
+    * taille_panier = taille du portefeuille
+    * fenetre_Analyse = taille de la fenêtre sur laquelle nous allons baser notre analyse pour rebalancer notre portfeuille (ne pas la prendre trop petite ou trop grande, 200 est bien)
+    * benchmark = recration de l'indice
+    """
+    list_Historical_Composition_Portfolio = [[-1]*taille_panier] #List de la composition du portefeuille pour chaque periode de rebalancement
+    #On initialise la liste à -1 pour pouvoir faire le 1e boucle du while
+    df_Historical_Yield_Portfolio = None #DataFrame contenant les rendement du portefeuille pour chaque jour sur toute la duree du rebalancement 
+    df_Historical_Yield_Indice = None #DataFrame contenant les rendement de l'indice pour chaque jour sur toute la duree du rebalancement 
+
+
+    #On boucle sur nos rebalancement tant qu'on n'a pas atteint la date finale
+
+    start_Date = datetime.datetime.strptime(start_Date, '%Y-%m-%d') #Transformation en objet datetime
+    end_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d') #Transformation en objet datetime
+    
+    while(start_Date < end_Date):
+        str_Start_Date = start_Date.strftime('%Y-%m-%d')
+        new_Portfolio, pd_Last_Yield_portfolio, pd_Last_Yield_indice  = Rebalancement_UnCycle_Plus(dbConn, list_Historical_Composition_Portfolio[-1], str_Start_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark, alpha)
+        #list_Historical_Composition_Portfolio[-1] sera le dernier element de la liste list_Historical_Composition_Portfolio (ici une sous-liste)
+        list_Historical_Composition_Portfolio.append(new_Portfolio)
+        #print(f"\n## pd_Last_Yield_portfolio > \n {pd_Last_Yield_portfolio}")
+        #print(f"\n## df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
+        df_Historical_Yield_Portfolio = pd.concat([df_Historical_Yield_Portfolio, pd_Last_Yield_portfolio], ignore_index = True)
+        #print(f"\n## NEW df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
+        if(len(df_Historical_Yield_Portfolio.values) != 0):
+            #Sinon on a un decalage d'une periode car a la premiere iteration df_Historical_Yield_Portfolio est toujours vide
+            df_Historical_Yield_Indice = pd.concat([df_Historical_Yield_Indice, pd_Last_Yield_indice], ignore_index = True)
+
+        start_Date = start_Date + datetime.timedelta(days = frequence_rebalancement) 
+
+    del list_Historical_Composition_Portfolio[0] #Delete la sous-liste d'index 0 car initialisee a -1
+    return list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Historical_Yield_Indice
+
+def Rebalancement_Minus(dbConn, start_Date, end_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark, alpha):
+    """Methode generale faisant tous les rebalancements sur une periode donnee"""
+    """
+    * dbConn = connexion a la base de donne MySQL
+    * start_Date = date du debut du rebalancement
+    * end_Date = date de fin du rebalancement
+    * frequence_rebalancement = nombre de jours entre chaque rebalancement
+    * taille_panier = taille du portefeuille
+    * fenetre_Analyse = taille de la fenêtre sur laquelle nous allons baser notre analyse pour rebalancer notre portfeuille (ne pas la prendre trop petite ou trop grande, 200 est bien)
+    * benchmark = recration de l'indice
+    """
+    list_Historical_Composition_Portfolio = [[-1]*taille_panier] #List de la composition du portefeuille pour chaque periode de rebalancement
+    #On initialise la liste à -1 pour pouvoir faire le 1e boucle du while
+    df_Historical_Yield_Portfolio = None #DataFrame contenant les rendement du portefeuille pour chaque jour sur toute la duree du rebalancement 
+    df_Historical_Yield_Indice = None #DataFrame contenant les rendement de l'indice pour chaque jour sur toute la duree du rebalancement 
+
+
+    #On boucle sur nos rebalancement tant qu'on n'a pas atteint la date finale
+
+    start_Date = datetime.datetime.strptime(start_Date, '%Y-%m-%d') #Transformation en objet datetime
+    end_Date = datetime.datetime.strptime(end_Date, '%Y-%m-%d') #Transformation en objet datetime
+    
+    while(start_Date < end_Date):
+        str_Start_Date = start_Date.strftime('%Y-%m-%d')
+        new_Portfolio, pd_Last_Yield_portfolio, pd_Last_Yield_indice  = Rebalancement_UnCycle_Minus(dbConn, list_Historical_Composition_Portfolio[-1], str_Start_Date, frequence_rebalancement, taille_panier, fenetre_Analyse, benchmark, alpha)
+        #list_Historical_Composition_Portfolio[-1] sera le dernier element de la liste list_Historical_Composition_Portfolio (ici une sous-liste)
+        list_Historical_Composition_Portfolio.append(new_Portfolio)
+        #print(f"\n## pd_Last_Yield_portfolio > \n {pd_Last_Yield_portfolio}")
+        #print(f"\n## df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
+        df_Historical_Yield_Portfolio = pd.concat([df_Historical_Yield_Portfolio, pd_Last_Yield_portfolio], ignore_index = True)
+        #print(f"\n## NEW df_Historical_Yield_Portfolio > \n {df_Historical_Yield_Portfolio}")
+        if(len(df_Historical_Yield_Portfolio.values) != 0):
+            #Sinon on a un decalage d'une periode car a la premiere iteration df_Historical_Yield_Portfolio est toujours vide
+            df_Historical_Yield_Indice = pd.concat([df_Historical_Yield_Indice, pd_Last_Yield_indice], ignore_index = True)
+
+        start_Date = start_Date + datetime.timedelta(days = frequence_rebalancement) 
+
+    del list_Historical_Composition_Portfolio[0] #Delete la sous-liste d'index 0 car initialisee a -1
+    return list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Historical_Yield_Indice
 #endregion
 
 def InfoRatio(Portfolio,Benchmark):
@@ -532,9 +808,10 @@ def InfoRatio(Portfolio,Benchmark):
 def LongShort(benchmark,alpha):
     
     df_plus, df_minus = None, None
-    df_plus = benchmark + alpha/252
-    df_minus = benchmark - alpha/252
-    
+    df_plus, df_minus = benchmark.copy(), benchmark.copy()
+    df_plus['log(AVG(close_Value))'] = df_plus['log(AVG(close_Value))'] + alpha/252
+    df_minus['log(AVG(close_Value))'] = df_minus['log(AVG(close_Value))'] - alpha/252
+
     return df_plus, df_minus
     
 #? MAIN
@@ -669,24 +946,41 @@ if __name__=='__main__' :
     list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Rendements_indice_lastPeriod = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
     print("\nInformation Ratio : " + str(InfoRatio(df_Historical_Yield_Portfolio,df_Rendements_indice_lastPeriod)) + "\n")
     
-    df_plus, df_minus = LongShort(df_Rendements_indice_lastPeriod, 0.05)
+    #df_plus, df_minus = LongShort(benchmark, 0.05)
+    
+    list_Historical_Composition_Portfolio_plus, df_Historical_Yield_Portfolio_plus, df_Rendements_indice_lastPeriod_plus = Rebalancement_Plus(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark, 0.05 )
+    list_Historical_Composition_Portfolio_minus, df_Historical_Yield_Portfolio_minus, df_Rendements_indice_lastPeriod_minus = Rebalancement_Minus(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark, 0.05 )
+
     
     #Recuperation des rendements de l'indice et du portfolio 
     #matrix_MeanYield = Select_Rendement(dbConnection, date_finRebalancement, windowSize, nb_J, compo_Indice_Date_t)
     #matrix_MeanYield = Rendement_Percent(matrix_MeanYield)
+    
     df_Rendements_indice_lastPeriod = Rendement_Percent(df_Rendements_indice_lastPeriod)
     df_Historical_Yield_Portfolio = Rendement_Percent(df_Historical_Yield_Portfolio)
+    
+    df_Rendements_indice_lastPeriod_plus = Rendement_Percent(df_Rendements_indice_lastPeriod_plus)
+    df_Historical_Yield_Portfolio_plus = Rendement_Percent(df_Historical_Yield_Portfolio_plus)
+    
+    df_Rendements_indice_lastPeriod_minus = Rendement_Percent(df_Rendements_indice_lastPeriod_minus)
+    df_Historical_Yield_Portfolio_minus = Rendement_Percent(df_Historical_Yield_Portfolio_minus)
+
+#    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod, df_Rendements_indice_lastPeriod_plus, df_Rendements_indice_lastPeriod_minus], ["Indice","Plus", "Minus"], "Long-Short")
+#    
     #print(df_Rendements_indice_lastPeriod)
     #print(df_Historical_Yield_Portfolio)
 
-    df_plus = Rendement_Percent(df_plus)
-    df_minus = Rendement_Percent(df_minus)
+#    df_plus = Rendement_Percent(df_plus)
+#    df_minus = Rendement_Percent(df_minus)
 
-    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod, df_plus, df_minus], ["Indice","Plus", "Minus"], "Long-Short")
+#    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod, df_plus, df_minus], ["Indice","Plus", "Minus"], "Long-Short")
 
     #Plot des rendements de l'Indice sur la période
     #Plot_Indice_Stocks([matrix_MeanYield, df_Historical_Yield_Portfolio], ["Indice","Portfolio"], "Replication de l'indice")
     Plot_Indice_Stocks([df_Rendements_indice_lastPeriod, df_Historical_Yield_Portfolio], ["Indice","Portfolio"], "Replication de l'indice")
+    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod_plus, df_Historical_Yield_Portfolio_plus], ["Indice","Portfolio"], "Replication de l'indice plus")
+    Plot_Indice_Stocks([df_Rendements_indice_lastPeriod_minus, df_Historical_Yield_Portfolio_minus], ["Indice","Portfolio"], "Replication de l'indice minus")
+
 
     #endregion
 
