@@ -805,6 +805,15 @@ def InfoRatio(Portfolio,Benchmark):
     
     return moy/vol
 
+def SharpeRatio(Portfolio, rf):
+    
+    vol=Portfolio["AVG(rendement)"].std()
+    ret=Portfolio["AVG(rendement)"].mean()
+    
+    
+    return (ret-rf)/vol
+
+
 def LongShort(benchmark,alpha):
     
     df_plus, df_minus = None, None
@@ -819,7 +828,7 @@ if __name__=='__main__' :
 
     #! A adpater suivant vos ID / Psw / Ports de connexion / Nom de database
     dbConnection = mysql.connector.connect(host= "127.0.0.1", port="3306",
-                                    user="root", password="N8L10UST",
+                                    user="root", password="",
                                     database="allDatas", use_pure=True)
 
     #Requette test
@@ -837,6 +846,7 @@ if __name__=='__main__' :
 #    #print(compo_Indice_Date_t)
 #    
 #    benchmark = Recreation_Indice(dbConnection)
+#    df_plus, df_minus=LongShort(benchmark, 0.05)
 #    #print(benchmark)
 #
 #    #Nombre de jours où il y a eu des trades sur la fenetre (ne compte pas les weekends et jours feriés)
@@ -897,6 +907,13 @@ if __name__=='__main__' :
 #    
 #    #TEST ADF
 #    #ADF(Y_test, predictions)
+    
+#    sigma_plus=df_plus.std()
+#    sigma_minus=df_minus.std()
+#    sigma_benchmark=benchmark.std()
+#    
+#    corr_plus=df_plus.corrwith(benchmark)
+#    corr_minus=df_minus.corrwith(benchmark)
 #    
 #
 #    #CORRELATION
@@ -945,7 +962,7 @@ if __name__=='__main__' :
     #Rebalancement du portefeuille entre la date de debut et de fin
     list_Historical_Composition_Portfolio, df_Historical_Yield_Portfolio, df_Rendements_indice_lastPeriod = Rebalancement(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark )
     print("\nInformation Ratio : " + str(InfoRatio(df_Historical_Yield_Portfolio,df_Rendements_indice_lastPeriod)) + "\n")
-    
+    print("\nSharpe Ratio : " + str(SharpeRatio(df_Historical_Yield_Portfolio,0.05)) + "\n")
     #df_plus, df_minus = LongShort(benchmark, 0.05)
     
     list_Historical_Composition_Portfolio_plus, df_Historical_Yield_Portfolio_plus, df_Rendements_indice_lastPeriod_plus = Rebalancement_Plus(dbConnection, date_debutRebalancement, date_finRebalancement, frequence_rebalancement, taille_panier, windowSize, benchmark, 0.05 )
@@ -983,5 +1000,25 @@ if __name__=='__main__' :
 
 
     #endregion
+    
+    
+    
+    
+    
+    
+   
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     dbConnection.close() #Fermeture du stream avec MySql
