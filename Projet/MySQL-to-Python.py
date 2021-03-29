@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 
+####################
+#* Projet PI2 - ESILV - A4
+#* Equipe 46
+# ####################
+
 #region Librairies
 #* py -m pip install mysql-connector
 #* py -m pip install mysql-connector-python
